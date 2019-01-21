@@ -17,13 +17,13 @@ if __name__ == '__main__':
 	nLyseries = 3
 	velwin = 3000.0
 
-	prop = fit_spectrum.props(QSO("HS1700p6416"))
+	prop = fit_spectrum.Props(QSO("HS1700p6416"))
 
 	# Ignore lines outside of wavelength range
 	wmin, wmax = np.min(prop._wave)/(1.0+prop._zem), np.max(prop._wave)/(1.0+prop._zem)
 
 	# Load atomic data
-	atom = fit_spectrum.atomic(wmin=wmin, wmax=wmax)
+	atom = fit_spectrum.Atomic(wmin=wmin, wmax=wmax)
 
 	fig, axs = plt.subplots(nrows=nLyseries, figsize=(16,9), facecolor="white", sharex=True, sharey=True)
 	specs = []

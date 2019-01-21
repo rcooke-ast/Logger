@@ -60,7 +60,6 @@ class SelectRegions(object):
         self.curreg = [None for i in range(self.naxis)]
         self.fitreg = [None for i in range(self.naxis)]
         self.backgrounds = [None for i in range(self.naxis)]
-        self.lineidx = 0
         self.axisidx = 0
         self._addsub = 0  # Adding a region (1) or removing (0)
         self._changes = False
@@ -72,10 +71,24 @@ class SelectRegions(object):
         self.lines = lines
 
         # Create the model lines variables
-        self.modelpars = None
-        self.modelvals = None
-        self.modelcrvs = [None for ii in range(self.naxis)]
+        self.modelLines = [None for ii in range(self.naxis)]  # The Line instance of the plotted model
+        self.abslin = AbsorptionLines()  # Stores all of the information about the master absorption lines.
+        self.actlin = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
         self.actors = [np.zeros(self.prop._wave.size) for ii in range(self.naxis)]
+
+        # Unset some of the matplotlib keymaps
+        matplotlib.pyplot.rcParams['keymap.fullscreen'] = ''        # toggling fullscreen (Default: f, ctrl+f)
+        matplotlib.pyplot.rcParams['keymap.home'] = ''              # home or reset mnemonic (Default: h, r, home)
+        matplotlib.pyplot.rcParams['keymap.back'] = ''              # forward / backward keys to enable (Default: left, c, backspace)
+        matplotlib.pyplot.rcParams['keymap.forward'] = ''           # left handed quick navigation (Default: right, v)
+        #matplotlib.pyplot.rcParams['keymap.pan'] = ''              # pan mnemonic (Default: p)
+        matplotlib.pyplot.rcParams['keymap.zoom'] = ''              # zoom mnemonic (Default: o)
+        matplotlib.pyplot.rcParams['keymap.save'] = ''              # saving current figure (Default: s)
+        matplotlib.pyplot.rcParams['keymap.quit'] = ''              # close the current figure (Default: ctrl+w, cmd+w)
+        matplotlib.pyplot.rcParams['keymap.grid'] = ''              # switching on/off a grid in current axes (Default: g)
+        matplotlib.pyplot.rcParams['keymap.yscale'] = ''            # toggle scaling of y-axes ('log'/'linear') (Default: l)
+        matplotlib.pyplot.rcParams['keymap.xscale'] = ''            # toggle scaling of x-axes ('log'/'linear') (Default: L, k)
+        matplotlib.pyplot.rcParams['keymap.all_axes'] = ''          # enable all axes (Default: a)
 
         canvas.mpl_connect('draw_event', self.draw_callback)
         canvas.mpl_connect('button_press_event', self.button_press_callback)
@@ -83,28 +96,26 @@ class SelectRegions(object):
         canvas.mpl_connect('button_release_event', self.button_release_callback)
         self.canvas = canvas
 
-        # Sort the lines by decreasing probability of detection
-        self.sort_lines()
-        self.get_current_line()
-        
-        # Draw the first line
-        self.next_spectrum()
+        # Update the wavelength range of the spectrum being plot
+        self.update_waverange()
+        # Draw the canvas
+        self.canvas.draw()
 
     def draw_lines(self):
         """
         Draw labels on the absorption lines for the input redshift
         """
-        if self.modelpars is None:
-            # There are no models at the moment
+        if self.actlin.size == 0:
+            # There are no model lines
             return
         for i in self.annlines: i.remove()
         for i in self.anntexts: i.remove()
         self.annlines = []
         self.anntexts = []
         for i in range(self.naxis):
-            for j in range(self.modelpars.shape[0]):
+            for j in range(self.actlin.size):
                 lam = self.lines[i]*(1.0+self.prop._zem)
-                velo = 299792.458*(self.lines[i]*(1.0+self.modelpars[j,1])-lam)/lam
+                velo = 299792.458*(self.lines[i]*(1.0+self.actlin.redshift[j])-lam)/lam
                 self.annlines.append(self.axs[i].axvline(velo, color='r'))
         return
 
@@ -129,17 +140,17 @@ class SelectRegions(object):
         return
 
     def draw_model(self):
-        if self.modelpars is None:
-            # There are no models at the moment
+        if self.actlin.size == 0:
+            # There are no model lines
             return
-        for i in self.modelcrvs:
+        for i in self.modelLines:
             if i is not None:
                 i.pop(0).remove()
         # Generate the model curve
         model = np.ones(self.prop._wave.size)
-        for i in range(self.modelpars.shape[0]):
+        for i in range(self.actlin.size):
             for j in range(self.naxis):
-                p0, p1, p2 = self.modelpars[i,0], self.modelpars[i,1], self.modelpars[i,2]
+                p0, p1, p2 = self.actlin.coldens[i], self.actlin.redshift[i], self.actlin.bval[i]
                 atidx = np.argmin(np.abs(self.lines[j]-self.atom._atom_wvl))
                 wv = self.lines[j]
                 fv = self.atom._atom_fvl[atidx]
@@ -149,7 +160,7 @@ class SelectRegions(object):
         for i in range(self.naxis):
             lam = self.lines[i]*(1.0+self.prop._zem)
             velo = 299792.458*(self.prop._wave-lam)/lam
-            self.modelcrvs[i] = self.axs[i].plot(velo, model, 'r-')
+            self.modelLines[i] = self.axs[i].plot(velo, model, 'r-')
         return
 
     def draw_callback(self, event):
@@ -160,10 +171,10 @@ class SelectRegions(object):
             velo = 299792.458*(self.prop._wave-lam)/lam
             if self.fitreg[i] is not None:
                 self.fitreg[i].remove()
-            self.fitreg[i] = self.axs[i].fill_between(velo, 0, 1, where=self.prop._regions==1, facecolor='green', alpha=0.5, transform=trans)
+            self.fitreg[i] = self.axs[i].fill_between(velo, 0, 1, where=self.prop._regions == 1, facecolor='green', alpha=0.5, transform=trans)
             if self.curreg[i] is not None:
                 self.curreg[i].remove()
-                self.curreg[i] = self.axs[i].fill_between(velo, 0, 1, where=self.actor==1, facecolor='red', alpha=0.5, transform=trans)
+                self.curreg[i] = self.axs[i].fill_between(velo, 0, 1, where=self.actors[i] == 1, facecolor='red', alpha=0.5, transform=trans)
             self.axs[i].set_yscale("linear")
             self.axs[i].draw_artist(self.specs[i])
         for i in range(self.naxis):
@@ -182,30 +193,6 @@ class SelectRegions(object):
             velo = 299792.458*(self.prop._wave-lam)/lam
         ind = np.argmin(np.abs(velo-event.xdata))
         return ind
-
-    def sort_lines(self, method="ion"):
-        """
-        Sort lines by decreasing probability of detection
-        """
-        if method == "sig":
-            coldens = 10.0**(self.atom.solar-12.0)
-            ew = coldens * (self.atom._atom_wvl**2 * self.atom._atom_fvl)
-            #snr = 1.0/self.prop._flue
-            #indices = np.abs(np.subtract.outer(self.prop._wave, self.atom._atom_wvl*(1.0+self.prop._zem))).argmin(0)
-            sigdet = ew#*snr[indices]
-            self.sortlines = np.argsort(sigdet)[::-1]
-        elif method == "ion":
-            self.sortlines = np.arange(self.atom._atom_wvl.size)
-        elif method == "wave":
-            self.sortlines = np.argsort(self.atom._atom_wvl)
-        return
-
-    def get_current_line(self):
-        if self.lineidx < 0:
-            self.lineidx += self.sortlines.size
-        if self.lineidx >= self.sortlines.size:
-            self.lineidx -= self.sortlines.size
-        self.linecur = self.sortlines[self.lineidx]
 
     def button_press_callback(self, event):
         """
@@ -230,21 +217,14 @@ class SelectRegions(object):
         if self.canvas.toolbar.mode != "":
             return
         self._end = self.get_ind_under_point(event)
-        if self._end != self._start:
-            if self._start > self._end:
-                tmp = self._start
-                self._start = self._end
-                self._end = tmp
-            self.actor *= 0
-            self.actor[self._start:self._end] = 1
-        # Add this to the master fitted regions
-        self.prop.add_region(self.actor)
+        self.update_actors(event)
+        # Plot the new actor
         for i in range(self.naxis):
+            if event.inaxes != self.axs[i]:
+                continue
             if self.curreg[i] is not None:
                 self.curreg[i].remove()
                 self.curreg[i] = None
-            if event.inaxes != self.axs[i]:
-                continue
             # Set the axis being used
             self.axisidx = i
             # Plot the selected region
@@ -252,8 +232,11 @@ class SelectRegions(object):
             self.canvas.restore_region(self.backgrounds[i])
             lam = self.lines[i]*(1.0+self.prop._zem)
             velo = 299792.458*(self.prop._wave-lam)/lam
-            #self.fb = self.ax.fill_between(velo, 0, 1, where=self.prop._regions==1, facecolor='green', alpha=0.5, transform=trans)
-            self.curreg[i] = self.axs[i].fill_between(velo, 0, 1, where=self.actor==1, facecolor='red', alpha=0.5, transform=trans)
+            # Find all regions
+            regwhr = np.copy(self.actors[i] == 1)
+            # Fudge to get the leftmost pixel shaded in too
+            regwhr[np.where((self.actors[i][:-1] == 0) & (self.actors[i][1:] == 1))] = True
+            self.curreg[i] = self.axs[i].fill_between(velo, 0, 1, where=regwhr, facecolor='red', alpha=0.5, transform=trans)
         self.canvas.draw()
 
     def key_press_callback(self, event):
@@ -262,11 +245,10 @@ class SelectRegions(object):
         """
         if not event.inaxes:
             return
-        # Used keys include:  acdfklmprquw?[]<>
+        # Used keys include:  cdfklmprquw?[]<>
         if event.key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
-            print("f       : toggle fullscreen")
             print("p       : toggle pan/zoom with the cursor")
             print("w       : write the model and a spectrum with the associated fitting regions")
             print("q       : exit")
@@ -276,7 +258,7 @@ class SelectRegions(object):
             print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
             print("m       : Add a metal line to the cursor")
             print("d       : Delete the nearest line to the cursor")
-            print("a       : Fit the current regions in all panels with ALIS")
+            print("f       : Fit the current regions in all panels with ALIS")
             print("c       : Clear current fitting (start over)")
             print("u       : Update (merge) current fitting into master model and regions")
             print("------------------------------------------------------------")
@@ -293,14 +275,14 @@ class SelectRegions(object):
         elif event.key == 'a':
             pass
         elif event.key == 'c':
-            pass
+            self.update_actors(event, clear=True)
         elif event.key == 'd':
             self.delete_line()
         # Don't need to explicitly put f in there
         elif event.key == 'k':
-            pass
+            self.add_absline(event)
         elif event.key == 'l':
-            self.fit_line()
+            self.add_absline(event, kind='lya')
         elif event.key == 'm':
             pass
         # Don't need to explicitly put p in there
@@ -317,12 +299,10 @@ class SelectRegions(object):
             self.update_master()
         elif event.key == 'w':
                 self.write_data()
-#        elif event.key == ']':
-#            self.next_element(1)
-#            self.next_spectrum()
-#        elif event.key == '[':
-#            self.next_element(-1)
-#            self.next_spectrum()
+        elif event.key == ']':
+            pass
+        elif event.key == '[':
+            pass
         self.canvas.draw()
 
     def key_release_callback(self, event):
@@ -332,76 +312,74 @@ class SelectRegions(object):
         if not event.inaxes:
             return
 
-    def delete_line(self):
-        if self.modelpars is None:
-            return
-        zclose = self.prop._wave[self._end]/self.lines[self.axisidx] - 1.0
-        zarg = np.argmin(np.abs(self.modelpars[:,1]-zclose))
-        self.modelpars = np.delete(self.modelpars, (zarg), axis=0)
-        if self.modelpars.shape[0] == 0:
-            self.modelpars = None
+    def add_absline(self, event, kind=None):
+        # Take the rest wavelength directly from the panel (unless kind is specified)
+        wave0 = self.lines[self.axisidx]
+        if kind == 'lya':
+            # Use H I Lyman alpha
+            wave0 = 1215.6701
+        # Get a quick fit to estimate some parameters
+        coldens, zabs, bval = self.fit_oneline(event, wave0)
+        self.actlin.add_absline(coldens, zabs, bval)
         self.draw_lines()
         self.draw_model()
 
-    def fit_line(self):
-        w = np.where(self.actor == 1)
+    def delete_line(self):
+        if self.actlin.size == 0:
+            return
+        zclose = self.prop._wave[self._end]/self.lines[self.axisidx] - 1.0
+        self.actlin.delete_absline(zclose)
+        self.draw_lines()
+        self.draw_model()
+
+    def fit_oneline(self, event, wave0):
+        """ This performs a very quick fit to the line (using only one actor) """
+        w = np.where(self.actors[self.axisidx] == 1)
         if w[0].size <= 3:
             print("WARNING : not enough pixels to fit a single line - at least 3 pixels are needed")
             return
+
+        # Find the wavelength that the cursor is hovering over
+        ind = self.get_ind_under_point(event)
+
         # Pick some starting parameters
         coldens0 = 14.0
-        zabs0 = np.mean(self.prop._wave[w])/self.lines[self.axisidx] - 1.0
+        zabs0 = self.prop._wave[ind] / wave0 - 1.0
         bval0 = 10.0
-        atidx = np.argmin(np.abs(self.lines[self.axisidx]-self.atom._atom_wvl))
-        wv = self.lines[self.axisidx]
+        p0 = [coldens0, zabs0, bval0]
+
+        # Get the atomic parameters of the line
+        atidx = np.argmin(np.abs(wave0-self.atom._atom_wvl))
+        wv = wave0
         fv = self.atom._atom_fvl[atidx]
         gm = self.atom._atom_gam[atidx]
         # Perform the fit
-        popt, pcov = curve_fit(lambda x, ng, zg, bg : voigt(x, ng, zg, bg, wv, fv, gm), self.prop._wave[w], self.prop._flux[w], sigma=self.prop._flue[w], method='lm', p0=[coldens0,zabs0,bval0])
-        #popt, pcov = curve_fit(lambda x, ng, bg : voigt(x, ng, zg, bg), wavfit[lnww[i]-nnpf:lnww[i]-nnpf+npixfit+1], fxpix, sigma=fepix, method='lm', p0=[ng,bg])
+        popt, pcov = curve_fit(lambda x, ng, zg, bg : voigt(x, ng, zg, bg, wv, fv, gm), self.prop._wave[w], self.prop._flux[w], sigma=self.prop._flue[w], method='lm', p0=p0)
         # Check if any of the parameters have gone "out of bounds"
-        addarr = np.array([popt[0], popt[1], popt[2]]).reshape((1, 3))
-        if self.modelpars is None:
-            self.modelpars = addarr.copy()
-        else:
-            self.modelpars = np.append(self.modelpars, addarr, axis=0)
+        return popt[0], popt[1], popt[2]
 
-    def next_element(self, pm, ion=False):
-        if ion == True:
-            arrsrt = np.core.defchararray.add(self.atom._atom_atm, self.atom._atom_ion)
-        else:
-            arrsrt = self.atom._atom_atm
-        unq, idx = np.unique(arrsrt, return_index=True)
-        unq = unq[idx.argsort()]
-        nxt = np.where(unq == arrsrt[self.linecur])[0][0]+pm
-        if nxt >= unq.size:
-            nxt = 0
-        ww = np.where(arrsrt == unq[nxt])[0]
-        self.lineidx = ww[0]
-        return
+    def update_actors(self, event, clear=False):
+        # Clear all actors if the user requests
+        if clear:
+            for i in range(self.naxis):
+                self.actors[i][:] = 0
+            return
+        # Otherwise, update the actors
+        if self._end != self._start:
+            # Reset start if start > end
+            if self._start > self._end:
+                tmp = self._start
+                self._start = self._end
+                self._end = tmp
+            # Set the corresponding pixels in the actor
+            for i in range(self.naxis):
+                if event.inaxes == self.axs[i]:
+                    self.actors[i][self._start:self._end] = self._addsub
 
-    def next_spectrum(self):
-        self.get_current_line()
-        # Update the wavelength range of the spectrum being plot
-        self.update_waverange()
-        # See if any regions need to be loaded
-        self.prop._regions[:] = 0
-        idtxt = "{0:s}_{1:s}_{2:.1f}".format(self.atom._atom_atm[self.linecur].strip(),self.atom._atom_ion[self.linecur].strip(),self.atom._atom_wvl[self.linecur])
-        tstnm = self.prop._outp + "_" + idtxt + "_reg.dat"
-        if os.path.exists(tstnm):
-            wv, reg = np.loadtxt(tstnm, unpack=True, usecols=(0,3))
-            mtch = np.in1d(self.prop._wave, wv, assume_unique=True)
-            self.prop._regions[np.where(mtch)] = reg.copy()
-            self.ax.set_xlim([np.min(wv), np.max(wv)])
-        # Other stuff
-        self.canvas.draw()
-        return
-
-    def update_model(self):
-        return
-
-    def update_regions(self):
-        self.prop._regions[self._start:self._end] = self._addsub
+    def update_master_regions(self):
+        for ii in range(self.naxis):
+            ww = np.where(self.actors[ii] == 1)
+            self.prop._regions[ww] = 1
 
     def update_waverange(self):
         for i in range(len(self.lines)):
@@ -414,6 +392,7 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def write_data(self):
+        """ MAY NOT BE NEEDED """
         for i in range(self.naxis):
             # Plot the lines
             lam = self.lines[i]*(1.0+self.prop._zem)
@@ -426,10 +405,11 @@ class SelectRegions(object):
             print("Saved file:")
             print(outnm)
         # Save the ALIS model file
-        modwrite(self.modelpars)
+        modwrite(self.actlin)
         return
 
-class props:
+
+class Props:
     def __init__(self, qso):
         # Load the data
         ifil = qso._path + qso._filename
@@ -468,23 +448,53 @@ class props:
         np.clip(self._regions, 0, 1)
         return
 
-class atomic:
+
+class AbsorptionLines:
+    def __init__(self):
+        self.coldens = np.array([])
+        self.redshift = np.array([])
+        self.bval = np.array([])
+        self.label = []
+        return
+
+    def add_absline(self, coldens, redshift, bval):
+        self.coldens = np.append(self.coldens, coldens)
+        self.redshift = np.append(self.redshift, redshift)
+        self.bval = np.append(self.bval, bval)
+        return
+
+    def delete_absline(self, zest):
+        """
+        zest : The estimated redshift of the line to be deleted
+        """
+        idx = np.argmin(np.abs(self.actlin.redshift-zest))
+        self.coldens = np.delete(self.coldens, (idx,), axis=0)
+        self.redshift = np.delete(self.redshift, (idx,), axis=0)
+        self.bval = np.delete(self.bval, (idx,), axis=0)
+        return
+
+    @property
+    def size(self):
+        return self.coldens.size
+
+class Atomic:
     def __init__(self, filename="/Users/rcooke/Software/ALIS_dataprep/atomic.dat", wmin=None, wmax=None):
         self._wmin = wmin
         self._wmax = wmax
-        self._atom_atm=[]
-        self._atom_ion=[]
-        self._atom_lbl=[]
-        self._atom_wvl=[]
-        self._atom_fvl=[]
-        self._atom_gam=[]
-        self._molecule_atm=[]
-        self._molecule_ion=[]
-        self._molecule_lbl=[]
-        self._molecule_wvl=[]
-        self._molecule_fvl=[]
-        self._molecule_gam=[]
+        self._atom_atm = []
+        self._atom_ion = []
+        self._atom_lbl = []
+        self._atom_wvl = []
+        self._atom_fvl = []
+        self._atom_gam = []
+        self._molecule_atm = []
+        self._molecule_ion = []
+        self._molecule_lbl = []
+        self._molecule_wvl = []
+        self._molecule_fvl = []
+        self._molecule_gam = []
         self.load_lines(filename)
+        self._solar = self.solar()
 
     def solar(self):
         elem = np.array(['H ', 'He','Li','Be','B ', 'C ', 'N ', 'O ', 'F ', 'Ne','Na','Mg','Al','Si','P ', 'S ', 'Cl','Ar','K ', 'Ca','Sc','Ti','V ', 'Cr','Mn','Fe','Co','Ni','Cu','Zn'])
@@ -492,10 +502,9 @@ class atomic:
         solr = np.array([12.0,10.93,3.26,1.30,2.79,8.43,7.83,8.69,4.42,7.93,6.26,7.56,6.44,7.51,5.42,7.14,5.23,6.40,5.06,6.29,3.05,4.91,3.95,5.64,5.48,7.47,4.93,6.21,4.25,4.63])
         solar = np.zeros(self._atom_atm.size)
         for i in range(elem.size):
-            w = np.where(self._atom_atm==elem[i])
+            w = np.where(self._atom_atm == elem[i])
             solar[w] = solr[i]
-        self.solar = solar
-        return
+        return solar
 
     def load_lines(self, filename):
         # Load the lines file
@@ -560,7 +569,7 @@ class atomic:
         self._atom_gam = self._atom_gam[ign]
 
         # Assign solar abundances to these lines
-        self.solar()
+        self._solar = self.solar()
 
         # Load the lines file
         print("Loading a list of molecular transitions...")
@@ -604,13 +613,13 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from matplotlib.patches import Polygon
 
-    prop = props(QSO("HS1700p6416"))
+    prop = Props(QSO("HS1700p6416"))
 
     # Ignore lines outside of wavelength range
     wmin, wmax = np.min(prop._wave)/(1.0+prop._zem), np.max(prop._wave)/(1.0+prop._zem)
 
     # Load atomic data
-    atom = atomic(wmin=wmin, wmax=wmax)
+    atom = Atomic(wmin=wmin, wmax=wmax)
 
     spec = Line2D(prop._wave, prop._flux, linewidth=1, linestyle='solid', color='k', drawstyle='steps', animated=True)
 
