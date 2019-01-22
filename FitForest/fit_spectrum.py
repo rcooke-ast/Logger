@@ -58,12 +58,14 @@ class SelectRegions(object):
         self.atom = atom
         self.veld = vel
         self._zplot = self.prop._zem     # The plotted redshift at the centre of each panel
-        self.curreg = [None for i in range(self.naxis)]
-        self.fitreg = [None for i in range(self.naxis)]
-        self.backgrounds = [None for i in range(self.naxis)]
+        self.curreg = [None for ii in range(self.naxis)]
+        self.fitreg = [None for ii in range(self.naxis)]
+        self.backgrounds = [None for ii in range(self.naxis)]
         self.axisidx = 0
         self.mouseidx = 0   # Index of wavelength array where mouse is located
-        self._addsub = 0  # Adding a region (1) or removing (0)
+        self._addsub = 0    # Adding a region (1) or removing (0)
+        self._start = 0     # Start of a region
+        self._end = 0       # End of a region
         self._changes = False
         self.annlines = []
         self.anntexts = []
@@ -198,6 +200,7 @@ class SelectRegions(object):
         """
         Get the index of the spectrum closest to the event point (could be a mouse move or key press, or button press)
         """
+        velo = 0.0
         for i in range(self.naxis):
             if event.inaxes != self.axs[i]:
                 continue
