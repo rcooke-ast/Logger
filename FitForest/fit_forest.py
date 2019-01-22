@@ -14,7 +14,7 @@ if __name__ == '__main__':
 	import matplotlib.pyplot as plt
 
 	# How many lines of the Lyman series should be plotted, and over what (half) velocity interval
-	nLyseries = 3
+	nLyseries = 5
 	velwin = 3000.0
 
 	prop = fit_spectrum.Props(QSO("HS1700p6416"))

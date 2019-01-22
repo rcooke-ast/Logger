@@ -57,10 +57,12 @@ class SelectRegions(object):
         self.prop = prop
         self.atom = atom
         self.veld = vel
+        self._zplot = self.prop._zem     # The plotted redshift at the centre of each panel
         self.curreg = [None for i in range(self.naxis)]
         self.fitreg = [None for i in range(self.naxis)]
         self.backgrounds = [None for i in range(self.naxis)]
         self.axisidx = 0
+        self.mouseidx = 0   # Index of wavelength array where mouse is located
         self._addsub = 0  # Adding a region (1) or removing (0)
         self._changes = False
         self.annlines = []
@@ -95,6 +97,7 @@ class SelectRegions(object):
         canvas.mpl_connect('button_press_event', self.button_press_callback)
         canvas.mpl_connect('key_press_event', self.key_press_callback)
         canvas.mpl_connect('button_release_event', self.button_release_callback)
+        canvas.mpl_connect('motion_notify_event', self.mouse_move_callback)
         self.canvas = canvas
 
         # Update the wavelength range of the spectrum being plot
@@ -114,8 +117,8 @@ class SelectRegions(object):
         self.annlines = []
         self.anntexts = []
         for i in range(self.naxis):
+            lam = self.lines[i] * (1.0 + self._zplot)
             for j in range(self.actlin.size):
-                lam = self.lines[i]*(1.0+self.prop._zem)
                 velo = 299792.458*(self.lines[i]*(1.0+self.actlin.redshift[j])-lam)/lam
                 self.annlines.append(self.axs[i].axvline(velo, color='r'))
         return
@@ -159,7 +162,7 @@ class SelectRegions(object):
                 model *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
         # Plot the model
         for i in range(self.naxis):
-            lam = self.lines[i]*(1.0+self.prop._zem)
+            lam = self.lines[i]*(1.0+self._zplot)
             velo = 299792.458*(self.prop._wave-lam)/lam
             self.modelLines[i] = self.axs[i].plot(velo, model, 'r-')
         return
@@ -168,7 +171,7 @@ class SelectRegions(object):
         for i in range(self.naxis):
             trans = mtransforms.blended_transform_factory(self.axs[i].transData, self.axs[i].transAxes)
             self.backgrounds[i] = self.canvas.copy_from_bbox(self.axs[i].bbox)
-            lam = self.lines[i]*(1.0+self.prop._zem)
+            lam = self.lines[i]*(1.0+self._zplot)
             velo = 299792.458*(self.prop._wave-lam)/lam
             if self.fitreg[i] is not None:
                 self.fitreg[i].remove()
@@ -183,14 +186,22 @@ class SelectRegions(object):
         self.draw_lines()
         self.draw_model()
 
-    def get_ind_under_point(self, event):
+    def mouse_move_callback(self, event):
         """
         Get the index of the spectrum closest to the cursor
+        """
+        if event.inaxes is None:
+            return
+        self.mouseidx = self.get_ind_under_point(event)
+
+    def get_ind_under_point(self, event):
+        """
+        Get the index of the spectrum closest to the event point (could be a mouse move or key press, or button press)
         """
         for i in range(self.naxis):
             if event.inaxes != self.axs[i]:
                 continue
-            lam = self.lines[i]*(1.0+self.prop._zem)
+            lam = self.lines[i]*(1.0+self._zplot)
             velo = 299792.458*(self.prop._wave-lam)/lam
         ind = np.argmin(np.abs(velo-event.xdata))
         return ind
@@ -231,7 +242,7 @@ class SelectRegions(object):
             # Plot the selected region
             trans = mtransforms.blended_transform_factory(self.axs[i].transData, self.axs[i].transAxes)
             self.canvas.restore_region(self.backgrounds[i])
-            lam = self.lines[i]*(1.0+self.prop._zem)
+            lam = self.lines[i]*(1.0+self._zplot)
             velo = 299792.458*(self.prop._wave-lam)/lam
             # Find all regions
             regwhr = np.copy(self.actors[i] == 1)
@@ -246,7 +257,7 @@ class SelectRegions(object):
         """
         if not event.inaxes:
             return
-        # Used keys include:  cdfklmprquw?[]<>
+        # Used keys include:  cdfiklmprquw?[]<>
         if event.key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -266,6 +277,7 @@ class SelectRegions(object):
             print("       INTERACTION COMMANDS")
             print("[ / ]   : pan left and right")
             print("< / >   : zoom in and out")
+            print("i       : Obtain information on the line closest to the cursor")
             print("r       : toggle residuals plotting (i.e. remove master model from data)")
             print("------------------------------------------------------------")
 #            print("       ATOMIC DATA OF THE CURRENT LINE")
@@ -273,17 +285,18 @@ class SelectRegions(object):
 #            print("Observed wavelength = {0:f}".format(self.atom._atom_wvl[self.linecur]*(1.0+self.prop._zem)))
 #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
 #            print("------------------------------------------------------------")
-        elif event.key == 'a':
-            pass
         elif event.key == 'c':
             self.update_actors(event, clear=True)
         elif event.key == 'd':
             self.delete_line()
-        # Don't need to explicitly put f in there
+        elif event.key == 'f':
+            pass
+        elif event.key == 'i':
+            self.lineinfo()
         elif event.key == 'k':
-            self.add_absline(event)
+            self.add_absline()
         elif event.key == 'l':
-            self.add_absline(event, kind='lya')
+            self.add_absline(kind='lya')
         elif event.key == 'm':
             pass
         # Don't need to explicitly put p in there
@@ -313,39 +326,45 @@ class SelectRegions(object):
         if not event.inaxes:
             return
 
-    def add_absline(self, event, kind=None):
+    def add_absline(self, kind=None):
         # Take the rest wavelength directly from the panel (unless kind is specified)
         wave0 = self.lines[self.axisidx]
+        label = "H I"
         if kind == 'lya':
             # Use H I Lyman alpha
             wave0 = 1215.6701
+            label = "H I"
+        elif kind == 'metal':
+            # TODO: Include metal line fitting as an option
+            # An example metal line
+            wave0 = 0.0
+            label = "METAL"
         # Get a quick fit to estimate some parameters
-        coldens, zabs, bval = self.fit_oneline(event, wave0)
-        self.actlin.add_absline(coldens, zabs, bval)
+        coldens, zabs, bval = self.fit_oneline(wave0)
+        self.actlin.add_absline(coldens, zabs, bval, label)
         self.draw_lines()
         self.draw_model()
 
     def delete_line(self):
         if self.actlin.size == 0:
             return
-        zclose = self.prop._wave[self._end]/self.lines[self.axisidx] - 1.0
+        # TODO : choosing self.lines[self.axisidx] is not correct:
+        # You should figure out which line is under the cursor, as is done for self.lineinfo()
+        zclose = self.prop._wave[self.mouseidx]/self.lines[self.axisidx] - 1.0
         self.actlin.delete_absline(zclose)
         self.draw_lines()
         self.draw_model()
 
-    def fit_oneline(self, event, wave0):
+    def fit_oneline(self, wave0):
         """ This performs a very quick fit to the line (using only one actor) """
         w = np.where(self.lactor == 1)
         if w[0].size <= 3:
             print("WARNING : not enough pixels to fit a single line - at least 3 pixels are needed")
             return
 
-        # Find the wavelength that the cursor is hovering over
-        ind = self.get_ind_under_point(event)
-
         # Pick some starting parameters
         coldens0 = 14.0
-        zabs0 = self.prop._wave[ind] / wave0 - 1.0
+        zabs0 = self.prop._wave[self.mouseidx] / wave0 - 1.0
         bval0 = 10.0
         p0 = [coldens0, zabs0, bval0]
 
@@ -358,6 +377,9 @@ class SelectRegions(object):
         popt, pcov = curve_fit(lambda x, ng, zg, bg : voigt(x, ng, zg, bg, wv, fv, gm), self.prop._wave[w], self.prop._flux[w], sigma=self.prop._flue[w], method='lm', p0=p0)
         # Check if any of the parameters have gone "out of bounds"
         return popt[0], popt[1], popt[2]
+
+    def lineinfo(self):
+        self.actlin.lineinfo(self.prop._wave[self.mouseidx], self.lines)
 
     def update_actors(self, event, clear=False):
         # Clear all actors if the user requests
@@ -461,25 +483,44 @@ class AbsorptionLines:
         self.label = []
         return
 
-    def add_absline(self, coldens, redshift, bval):
+    @property
+    def size(self):
+        return self.coldens.size
+
+    def add_absline(self, coldens, redshift, bval, label):
         self.coldens = np.append(self.coldens, coldens)
         self.redshift = np.append(self.redshift, redshift)
         self.bval = np.append(self.bval, bval)
+        self.label += [label]
         return
 
     def delete_absline(self, zest):
         """
         zest : The estimated redshift of the line to be deleted
         """
-        idx = np.argmin(np.abs(self.actlin.redshift-zest))
+        idx = int(np.argmin(np.abs(self.redshift-zest)))
         self.coldens = np.delete(self.coldens, (idx,), axis=0)
         self.redshift = np.delete(self.redshift, (idx,), axis=0)
         self.bval = np.delete(self.bval, (idx,), axis=0)
+        del self.label[idx]
         return
 
-    @property
-    def size(self):
-        return self.coldens.size
+    def lineinfo(self, west, lines):
+        """
+        zest : The estimated redshift of the line to be deleted
+        """
+        amin = np.argmin(np.abs(np.outer(lines, 1 + self.redshift) - west))
+        idx = np.unravel_index(amin, (lines.size, self.redshift.size))
+        lidx, widx = int(idx[0]), int(idx[1])
+        print("=======================================================")
+        print("Line Information:")
+        print("  {0:s} {1:.2f}".format(self.label[widx], lines[lidx]))
+        print("  Col Dens = {0:.3f}".format(self.coldens[widx]))
+        print("  Redshift = {0:.6f}".format(self.redshift[widx]))
+        print("  Dopp Par = {0:.2f}".format(self.bval[widx]))
+
+        return
+
 
 class Atomic:
     def __init__(self, filename="/Users/rcooke/Software/ALIS_dataprep/atomic.dat", wmin=None, wmax=None):
