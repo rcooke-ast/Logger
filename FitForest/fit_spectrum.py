@@ -75,6 +75,7 @@ class SelectRegions(object):
         self.abslin = AbsorptionLines()  # Stores all of the information about the master absorption lines.
         self.actlin = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
         self.actors = [np.zeros(self.prop._wave.size) for ii in range(self.naxis)]
+        self.lactor = np.zeros(self.prop._wave.size)  # Just the previously selected actor
 
         # Unset some of the matplotlib keymaps
         matplotlib.pyplot.rcParams['keymap.fullscreen'] = ''        # toggling fullscreen (Default: f, ctrl+f)
@@ -334,7 +335,7 @@ class SelectRegions(object):
 
     def fit_oneline(self, event, wave0):
         """ This performs a very quick fit to the line (using only one actor) """
-        w = np.where(self.actors[self.axisidx] == 1)
+        w = np.where(self.lactor == 1)
         if w[0].size <= 3:
             print("WARNING : not enough pixels to fit a single line - at least 3 pixels are needed")
             return
@@ -371,6 +372,9 @@ class SelectRegions(object):
                 tmp = self._start
                 self._start = self._end
                 self._end = tmp
+            # Set the pixels for the current selection
+            self.lactor[:] = 0
+            self.lactor[self._start:self._end] = self._addsub
             # Set the corresponding pixels in the actor
             for i in range(self.naxis):
                 if event.inaxes == self.axs[i]:
