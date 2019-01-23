@@ -46,12 +46,17 @@ class SelectRegions(object):
     Generate a model and regions to be fit with ALIS
     """
 
-    def __init__(self, canvas, axs, specs, prop, atom, vel=500.0, lines=None):
+    def __init__(self, canvas, axs, axi, specs, prop, atom, vel=500.0, lines=None):
         """
+        axs : ndarray
+          array of all data axes
+        axi : Axes instance
+          axis used to display information
         vel : float
           Default +/- plotting window in km/s
         """
         self.axs = axs
+        self.axi = axi
         self.naxis = len(axs)
         self.specs = specs
         self.prop = prop
@@ -66,6 +71,7 @@ class SelectRegions(object):
         self._addsub = 0    # Adding a region (1) or removing (0)
         self._start = 0     # Start of a region
         self._end = 0       # End of a region
+        self._resid = False  # Are the residuals currently being plotted?
         self._changes = False
         self.annlines = []
         self.anntexts = []
@@ -75,9 +81,10 @@ class SelectRegions(object):
         self.lines = lines
 
         # Create the model lines variables
-        self.modelLines = [None for ii in range(self.naxis)]  # The Line instance of the plotted model
-        self.abslin = AbsorptionLines()  # Stores all of the information about the master absorption lines.
-        self.actlin = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
+        self.modelLines_act = [None for ii in range(self.naxis)]  # The Line instance of the plotted actors model
+        self.modelLines_mst = [None for ii in range(self.naxis)]  # The Line instance of the plotted master model
+        self.lines_mst = AbsorptionLines()  # Stores all of the information about the master absorption lines.
+        self.lines_act = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
         self.actors = [np.zeros(self.prop._wave.size) for ii in range(self.naxis)]
         self.lactor = np.zeros(self.prop._wave.size)  # Just the previously selected actor
 
@@ -111,7 +118,7 @@ class SelectRegions(object):
         """
         Draw labels on the absorption lines for the input redshift
         """
-        if self.actlin.size == 0:
+        if self.lines_act.size == 0:
             # There are no model lines
             return
         for i in self.annlines: i.remove()
@@ -120,8 +127,8 @@ class SelectRegions(object):
         self.anntexts = []
         for i in range(self.naxis):
             lam = self.lines[i] * (1.0 + self._zplot)
-            for j in range(self.actlin.size):
-                velo = 299792.458*(self.lines[i]*(1.0+self.actlin.redshift[j])-lam)/lam
+            for j in range(self.lines_act.size):
+                velo = 299792.458 * (self.lines[i] * (1.0 + self.lines_act.redshift[j]) - lam) / lam
                 self.annlines.append(self.axs[i].axvline(velo, color='r'))
         return
 
@@ -146,27 +153,38 @@ class SelectRegions(object):
         return
 
     def draw_model(self):
-        if self.actlin.size == 0:
+        if self.lines_act.size == 0:
             # There are no model lines
             return
-        for i in self.modelLines:
+        for i in self.modelLines_act:
             if i is not None:
                 i.pop(0).remove()
-        # Generate the model curve
-        model = np.ones(self.prop._wave.size)
-        for i in range(self.actlin.size):
+        # Generate the model curve for the actors
+        self.model_act = np.ones(self.prop._wave.size)
+        for i in range(self.lines_act.size):
             for j in range(self.naxis):
-                p0, p1, p2 = self.actlin.coldens[i], self.actlin.redshift[i], self.actlin.bval[i]
+                p0, p1, p2 = self.lines_act.coldens[i], self.lines_act.redshift[i], self.lines_act.bval[i]
                 atidx = np.argmin(np.abs(self.lines[j]-self.atom._atom_wvl))
                 wv = self.lines[j]
                 fv = self.atom._atom_fvl[atidx]
                 gm = self.atom._atom_gam[atidx]
-                model *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
-        # Plot the model
+                self.model_act *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
+        # Generate the model curve for the master spectrum
+        self.model_mst = np.ones(self.prop._wave.size)
+        for i in range(self.lines_mst.size):
+            for j in range(self.naxis):
+                p0, p1, p2 = self.lines_mst.coldens[i], self.lines_mst.redshift[i], self.lines_mst.bval[i]
+                atidx = np.argmin(np.abs(self.lines[j]-self.atom._atom_wvl))
+                wv = self.lines[j]
+                fv = self.atom._atom_fvl[atidx]
+                gm = self.atom._atom_gam[atidx]
+                self.model_mst *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
+        # Plot the models
         for i in range(self.naxis):
             lam = self.lines[i]*(1.0+self._zplot)
             velo = 299792.458*(self.prop._wave-lam)/lam
-            self.modelLines[i] = self.axs[i].plot(velo, model, 'r-')
+            self.modelLines_mst[i] = self.axs[i].plot(velo, self.model_mst, 'b-', linewidth=2.0)
+            self.modelLines_act[i] = self.axs[i].plot(velo, self.model_act, 'r-', linewidth=1.0)
         return
 
     def draw_callback(self, event):
@@ -229,6 +247,14 @@ class SelectRegions(object):
         """
         if event.inaxes is None:
             return
+        if event.inaxes == self.axi:
+            # TODO : What do we do with this response?
+            if event.xdata > 0.8 and event.xdata < 0.9:
+                answer = "yes"
+            elif event.xdata >= 0.9:
+                answer = "no"
+            self.update_infobox(default=True)
+            return
         if self.canvas.toolbar.mode != "":
             return
         self._end = self.get_ind_under_point(event)
@@ -258,7 +284,11 @@ class SelectRegions(object):
         """
         whenever a key is pressed
         """
+        # Check that the event is in an axis...
         if not event.inaxes:
+            return
+        # ... but not the information box!
+        if event.inaxes == self.axi:
             return
         # Used keys include:  cdfiklmprquw?[]<>
         if event.key == '?':
@@ -293,7 +323,7 @@ class SelectRegions(object):
         elif event.key == 'd':
             self.delete_line()
         elif event.key == 'f':
-            pass
+            self.update_infobox(message="Accept fit?", yesno=True)
         elif event.key == 'i':
             self.lineinfo()
         elif event.key == 'k':
@@ -311,15 +341,15 @@ class SelectRegions(object):
             else:
                 sys.exit()
         elif event.key == 'r':
-            pass
+            self.toggle_residuals()
         elif event.key == 'u':
             self.update_master()
         elif event.key == 'w':
-                self.write_data()
+            self.write_data()
         elif event.key == ']':
-            pass
+            self.shift_waverange(shiftdir=+1)
         elif event.key == '[':
-            pass
+            self.shift_waverange(shiftdir=-1)
         self.canvas.draw()
 
     def key_release_callback(self, event):
@@ -344,17 +374,17 @@ class SelectRegions(object):
             label = "METAL"
         # Get a quick fit to estimate some parameters
         coldens, zabs, bval = self.fit_oneline(wave0)
-        self.actlin.add_absline(coldens, zabs, bval, label)
+        self.lines_act.add_absline(coldens, zabs, bval, label)
         self.draw_lines()
         self.draw_model()
 
     def delete_line(self):
-        if self.actlin.size == 0:
+        if self.lines_act.size == 0:
             return
         # TODO : choosing self.lines[self.axisidx] is not correct:
         # You should figure out which line is under the cursor, as is done for self.lineinfo()
         zclose = self.prop._wave[self.mouseidx]/self.lines[self.axisidx] - 1.0
-        self.actlin.delete_absline(zclose)
+        self.lines_act.delete_absline(zclose)
         self.draw_lines()
         self.draw_model()
 
@@ -376,13 +406,45 @@ class SelectRegions(object):
         wv = wave0
         fv = self.atom._atom_fvl[atidx]
         gm = self.atom._atom_gam[atidx]
+        # Prepare the data to be fitted
+        if self._resid:
+            flxfit = self.prop._flux / (self.model_mst*self.model_act)
+            flefit = self.prop._flue / (self.model_mst*self.model_act)
+        else:
+            flxfit = self.prop._flux
+            flefit = self.prop._flue
         # Perform the fit
-        popt, pcov = curve_fit(lambda x, ng, zg, bg : voigt(x, ng, zg, bg, wv, fv, gm), self.prop._wave[w], self.prop._flux[w], sigma=self.prop._flue[w], method='lm', p0=p0)
+        try:
+            popt, pcov = curve_fit(lambda x, ng, zg, bg : voigt(x, ng, zg, bg, wv, fv, gm), self.prop._wave[w], flxfit[w], sigma=flefit[w], method='lm', p0=p0)
+            self.update_infobox(default=True)
+        except RuntimeError:
+            self.update_infobox(message="ERROR: Optimal parameters not found in fit_oneline")
         # Check if any of the parameters have gone "out of bounds"
         return popt[0], popt[1], popt[2]
 
+    def shift_waverange(self, shiftdir=-1):
+        xmn, xmx = self.axs[0].get_xlim()
+        ymn, ymx = self.axs[0].get_ylim()
+        shft = shiftdir*self.veld/3.0
+        xmn += shft
+        xmx += shft
+        for i in range(len(self.lines)):
+            self.axs[i].set_xlim([xmn, xmx])
+            self.axs[i].set_ylim([ymn, ymx])
+        self.canvas.draw()
+
     def lineinfo(self):
-        self.actlin.lineinfo(self.prop._wave[self.mouseidx], self.lines)
+        self.lines_act.lineinfo(self.prop._wave[self.mouseidx], self.lines)
+
+    def toggle_residuals(self):
+        for i in range(self.naxis):
+            if self._resid:
+                self.specs[i].set_ydata(self.prop._flux/(self.model_mst*self.model_act))
+            else:
+                self.specs[i].set_ydata(self.prop._flux)
+        self.canvas.draw()
+        self.canvas.flush_events()
+        self._resid = not self._resid
 
     def update_actors(self, event, clear=False):
         # Clear all actors if the user requests
@@ -404,6 +466,26 @@ class SelectRegions(object):
             for i in range(self.naxis):
                 if event.inaxes == self.axs[i]:
                     self.actors[i][self._start:self._end] = self._addsub
+
+    def update_infobox(self, message="Press '?' to list the available options",
+                       yesno=True, default=False):
+        self.axi.clear()
+        if default:
+            self.axi.text(0.5, 0.5, "Press '?' to list the available options", transform=self.axi.transAxes,
+                          horizontalalignment='center', verticalalignment='center')
+            self.canvas.draw()
+            return
+        # Display the message
+        self.axi.text(0.5, 0.5, message, transform=self.axi.transAxes,
+                      horizontalalignment='center', verticalalignment='center')
+        if yesno:
+            self.axi.fill_between([0.8, 0.9], 0, 1, facecolor='green', alpha=0.5, transform=self.axi.transAxes)
+            self.axi.fill_between([0.9, 1.0], 0, 1, facecolor='red', alpha=0.5, transform=self.axi.transAxes)
+            self.axi.text(0.85, 0.5, "YES", transform=self.axi.transAxes,
+                          horizontalalignment='center', verticalalignment='center')
+            self.axi.text(0.95, 0.5, "NO", transform=self.axi.transAxes,
+                          horizontalalignment='center', verticalalignment='center')
+        self.canvas.draw()
 
     def update_master_regions(self):
         for ii in range(self.naxis):
@@ -434,7 +516,7 @@ class SelectRegions(object):
             print("Saved file:")
             print(outnm)
         # Save the ALIS model file
-        modwrite(self.actlin)
+        modwrite(self.lines_act)
         return
 
 
