@@ -323,6 +323,7 @@ class SelectRegions(object):
         elif event.key == 'd':
             self.delete_line()
         elif event.key == 'f':
+            # TODO : Add this functionality
             self.update_infobox(message="Accept fit?", yesno=True)
         elif event.key == 'i':
             self.lineinfo()
@@ -343,6 +344,7 @@ class SelectRegions(object):
         elif event.key == 'r':
             self.toggle_residuals()
         elif event.key == 'u':
+            # TODO : add this functionality
             self.update_master()
         elif event.key == 'w':
             self.write_data()
@@ -350,6 +352,10 @@ class SelectRegions(object):
             self.shift_waverange(shiftdir=+1)
         elif event.key == '[':
             self.shift_waverange(shiftdir=-1)
+        elif event.key == '>':
+            pass
+        elif event.key == '<':
+            pass
         self.canvas.draw()
 
     def key_release_callback(self, event):
