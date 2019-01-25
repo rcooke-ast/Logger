@@ -344,7 +344,6 @@ class SelectRegions(object):
         elif event.key == 'r':
             self.toggle_residuals()
         elif event.key == 'u':
-            # TODO : add this functionality
             self.update_master()
         elif event.key == 'w':
             self.write_data()
@@ -493,10 +492,29 @@ class SelectRegions(object):
                           horizontalalignment='center', verticalalignment='center')
         self.canvas.draw()
 
+    def update_master(self):
+        # Store the master regions and lines.
+        self.update_master_regions()
+        self.update_master_lines()
+        # Merge models and reset
+        self.model_mst *= self.model_act
+        self.model_act[:] = 1.0
+        # Update the plotted lines
+        for i in range(self.naxis):
+            self.modelLines_mst[i].set_ydata(self.model_mst)
+            self.modelLines_act[i].set_ydata(self.model_act)
+        self.canvas.draw()
+        return
+
     def update_master_regions(self):
         for ii in range(self.naxis):
             ww = np.where(self.actors[ii] == 1)
             self.prop._regions[ww] = 1
+
+    def update_master_lines(self):
+        for ii in range(self.lines_act.size):
+            self.lines_mst.add_absline_inst(self.lines_act, 0)
+            self.lines_act.delete_absline_idx(0)
 
     def update_waverange(self):
         for i in range(len(self.lines)):
@@ -585,11 +603,25 @@ class AbsorptionLines:
         self.label += [label]
         return
 
+    def add_absline_inst(self, inst, idx):
+        self.add_absline(inst.coldens[idx], inst.redshift[idx], inst.bval[idx], inst.label[idx])
+        return
+
     def delete_absline(self, zest):
         """
         zest : The estimated redshift of the line to be deleted
         """
         idx = int(np.argmin(np.abs(self.redshift-zest)))
+        self.coldens = np.delete(self.coldens, (idx,), axis=0)
+        self.redshift = np.delete(self.redshift, (idx,), axis=0)
+        self.bval = np.delete(self.bval, (idx,), axis=0)
+        del self.label[idx]
+        return
+
+    def delete_absline_idx(self, idx):
+        """
+        zest : The estimated redshift of the line to be deleted
+        """
         self.coldens = np.delete(self.coldens, (idx,), axis=0)
         self.redshift = np.delete(self.redshift, (idx,), axis=0)
         self.bval = np.delete(self.bval, (idx,), axis=0)
