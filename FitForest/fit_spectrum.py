@@ -327,6 +327,8 @@ class SelectRegions(object):
             self.delete_line()
         elif event.key == 'f':
             # TODO : Add this functionality
+            # Does "accept" in this case imply merge with master, or simply update the actors?
+            # I think the latter. 'u' updates/merges to master
             self.update_infobox(message="Accept fit?", yesno=True)
         elif event.key == 'i':
             self.lineinfo()
@@ -390,10 +392,7 @@ class SelectRegions(object):
     def delete_line(self):
         if self.lines_act.size == 0:
             return
-        # TODO : choosing self.lines[self.axisidx] is not correct:
-        # You should figure out which line is under the cursor, as is done for self.lineinfo()
-        zclose = self.prop._wave[self.mouseidx]/self.lines[self.axisidx] - 1.0
-        self.lines_act.delete_absline(zclose)
+        self.lines_act.delete_absline(self.prop._wave[self.mouseidx], self.lines)
         self.draw_lines()
         self.draw_model()
         self.canvas.draw()
@@ -614,21 +613,20 @@ class AbsorptionLines:
         self.add_absline(inst.coldens[idx], inst.redshift[idx], inst.bval[idx], inst.label[idx])
         return
 
-    def delete_absline(self, zest):
+    def delete_absline(self, west, lines):
         """
-        zest : The estimated redshift of the line to be deleted
+        west : The estimated wavelength of the line to be deleted
         """
-        idx = int(np.argmin(np.abs(self.redshift-zest)))
-        self.coldens = np.delete(self.coldens, (idx,), axis=0)
-        self.redshift = np.delete(self.redshift, (idx,), axis=0)
-        self.bval = np.delete(self.bval, (idx,), axis=0)
-        del self.label[idx]
+        amin = np.argmin(np.abs(np.outer(lines, 1 + self.redshift) - west))
+        idx = np.unravel_index(amin, (lines.size, self.redshift.size))
+        lidx, widx = int(idx[0]), int(idx[1])
+        self.coldens = np.delete(self.coldens, (widx,), axis=0)
+        self.redshift = np.delete(self.redshift, (widx,), axis=0)
+        self.bval = np.delete(self.bval, (widx,), axis=0)
+        del self.label[widx]
         return
 
     def delete_absline_idx(self, idx):
-        """
-        zest : The estimated redshift of the line to be deleted
-        """
         self.coldens = np.delete(self.coldens, (idx,), axis=0)
         self.redshift = np.delete(self.redshift, (idx,), axis=0)
         self.bval = np.delete(self.bval, (idx,), axis=0)
@@ -637,7 +635,7 @@ class AbsorptionLines:
 
     def lineinfo(self, west, lines):
         """
-        zest : The estimated redshift of the line to be deleted
+        west : The estimated wavelength of the line to be deleted
         """
         amin = np.argmin(np.abs(np.outer(lines, 1 + self.redshift) - west))
         idx = np.unravel_index(amin, (lines.size, self.redshift.size))
