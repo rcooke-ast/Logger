@@ -118,9 +118,9 @@ class SelectRegions(object):
         """
         Draw labels on the absorption lines for the input redshift
         """
-        if self.lines_act.size == 0:
+#        if self.lines_act.size == 0:
             # There are no model lines
-            return
+#            return
         for i in self.annlines: i.remove()
         for i in self.anntexts: i.remove()
         self.annlines = []
@@ -153,10 +153,13 @@ class SelectRegions(object):
         return
 
     def draw_model(self):
-        if self.lines_act.size == 0:
+#        if self.lines_act.size == 0:
             # There are no model lines
-            return
+#            return
         for i in self.modelLines_act:
+            if i is not None:
+                i.pop(0).remove()
+        for i in self.modelLines_mst:
             if i is not None:
                 i.pop(0).remove()
         # Generate the model curve for the actors
@@ -382,6 +385,7 @@ class SelectRegions(object):
         self.lines_act.add_absline(coldens, zabs, bval, label)
         self.draw_lines()
         self.draw_model()
+        self.canvas.draw()
 
     def delete_line(self):
         if self.lines_act.size == 0:
@@ -392,6 +396,7 @@ class SelectRegions(object):
         self.lines_act.delete_absline(zclose)
         self.draw_lines()
         self.draw_model()
+        self.canvas.draw()
 
     def fit_oneline(self, wave0):
         """ This performs a very quick fit to the line (using only one actor) """
@@ -456,6 +461,7 @@ class SelectRegions(object):
         if clear:
             for i in range(self.naxis):
                 self.actors[i][:] = 0
+                self.lactor[:] = 0
             return
         # Otherwise, update the actors
         if self._end != self._start:
@@ -499,10 +505,11 @@ class SelectRegions(object):
         # Merge models and reset
         self.model_mst *= self.model_act
         self.model_act[:] = 1.0
+        # Clear the actors
+        self.update_actors(None, clear=True)
         # Update the plotted lines
-        for i in range(self.naxis):
-            self.modelLines_mst[i].set_ydata(self.model_mst)
-            self.modelLines_act[i].set_ydata(self.model_act)
+        self.draw_lines()
+        self.draw_model()
         self.canvas.draw()
         return
 
