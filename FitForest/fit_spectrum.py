@@ -1,6 +1,7 @@
 import pdb
 import os
 import sys
+import datetime
 import numpy as np
 import matplotlib
 from matplotlib.lines import Line2D
@@ -111,6 +112,10 @@ class SelectRegions(object):
 
         # Update the wavelength range of the spectrum being plot
         self.update_waverange()
+
+        # Just before the canvas is drawn, generate the autosave preamble
+        # to save the properties of this execution of the code
+        self.autosave_preamble()
         # Draw the canvas
         self.canvas.draw()
 
@@ -230,6 +235,14 @@ class SelectRegions(object):
         ind = np.argmin(np.abs(velo-event.xdata))
         return ind
 
+    def get_axisID(self, event):
+        for ii in range(self.naxis):
+            if event.inaxes == self.axs[ii]:
+                return ii
+        if event.inaxes == self.axi:
+            return self.naxis
+        return None
+
     def button_press_callback(self, event):
         """
         whenever a mouse button is pressed
@@ -261,7 +274,7 @@ class SelectRegions(object):
         if self.canvas.toolbar.mode != "":
             return
         self._end = self.get_ind_under_point(event)
-        self.update_actors(event)
+        self.update_actors(self.get_axisID(event))
         # Plot the new actor
         for i in range(self.naxis):
             if event.inaxes != self.axs[i]:
@@ -323,7 +336,8 @@ class SelectRegions(object):
 #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
 #            print("------------------------------------------------------------")
         elif event.key == 'c':
-            self.update_actors(event, clear=True)
+            self.update_actors(self.get_axisID(event), clear=True)
+            self.autosave('c', event)
         elif event.key == 'd':
             self.delete_line()
         elif event.key == 'f':
@@ -350,7 +364,7 @@ class SelectRegions(object):
         elif event.key == 'r':
             self.toggle_residuals()
         elif event.key == 'u':
-            #TODO : undo previous operation
+            # TODO :: undo previous operation
         elif event.key == 'w':
             self.write_data()
         elif event.key == ']':
@@ -363,12 +377,26 @@ class SelectRegions(object):
             pass
         self.canvas.draw()
 
-    def autosave(self, ):
+    def autosave(self, kbID, event):
         """
         For each operation performed on the data, save information about the operation performed.
         """
+        # TODO :: add autosave functionality
         f = open("{0:s}.logger".format(self.prop._outp), "a+")
-        f.write("\n")
+        if kbID == 'c':
+            axisID = self.get_axisID(event)
+            f.write("c {0:d} True\n".format(axisID))
+        else:
+            pass
+        f.close()
+        return
+
+    def autosave_preamble(self):
+        # TODO :: complete this preamble with all relevant information about each execution of the code
+        # Make sure that the code checks if the file is about to be overwritten
+        f = open("{0:s}.logger".format(self.prop._outp), "a+")
+        f.write("# This LOGGER file was generated on {0:s}\n".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        f.write("------------------------------\n") # Separate preamble from code operations with a series of dashes
         f.close()
         return
 
@@ -465,7 +493,7 @@ class SelectRegions(object):
         self.canvas.flush_events()
         self._resid = not self._resid
 
-    def update_actors(self, event, clear=False):
+    def update_actors(self, axisID, clear=False):
         # Clear all actors if the user requests
         if clear:
             for i in range(self.naxis):
@@ -483,9 +511,7 @@ class SelectRegions(object):
             self.lactor[:] = 0
             self.lactor[self._start:self._end] = self._addsub
             # Set the corresponding pixels in the actor
-            for i in range(self.naxis):
-                if event.inaxes == self.axs[i]:
-                    self.actors[i][self._start:self._end] = self._addsub
+            self.actors[axisID][self._start:self._end] = self._addsub
 
     def update_infobox(self, message="Press '?' to list the available options",
                        yesno=True, default=False):
