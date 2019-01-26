@@ -602,6 +602,18 @@ class AbsorptionLines:
     def size(self):
         return self.coldens.size
 
+    def alis_modlines(self):
+        modlines = []
+        # Do the emission
+        modlines += ["emission"]
+        modlines += ["legendre  1.0  0.0  0.0  0.0  0.0  scale=1.0,1.0,1.0,1.0,1.0  specid=Lya"]
+        # Do the absorption
+        modlines += ["absorption"]
+        for ll in range(self.size):
+            modlines += ["voigt ion={0:s}  {1:.4f}  {2:.9f}  {3:.3f}  0.0TZERO  blind=False  specid=Lya".format(
+                self.label[ll], self.coldens[0], self.redshift[0], self.bval[0])]
+        return modlines
+
     def add_absline(self, coldens, redshift, bval, label):
         self.coldens = np.append(self.coldens, coldens)
         self.redshift = np.append(self.redshift, redshift)
@@ -646,7 +658,6 @@ class AbsorptionLines:
         print("  Col Dens = {0:.3f}".format(self.coldens[widx]))
         print("  Redshift = {0:.6f}".format(self.redshift[widx]))
         print("  Dopp Par = {0:.2f}".format(self.bval[widx]))
-
         return
 
 
