@@ -304,11 +304,12 @@ class SelectRegions(object):
             print("       FITTING COMMANDS")
             print("k       : Add a line at the specified location (line ID will depend on panel)")
             print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
-            print("m       : Add a metal line to the cursor")
+            #print("m       : Add a metal line to the cursor")
             print("d       : Delete the nearest line to the cursor")
             print("f       : Fit the current regions in all panels with ALIS")
             print("c       : Clear current fitting (start over)")
-            print("u       : Update (merge) current fitting into master model and regions")
+            print("m       : Merge current fitting into master model and master regions")
+            print("u       : Undo most recent operation")
             print("------------------------------------------------------------")
             print("       INTERACTION COMMANDS")
             print("[ / ]   : pan left and right")
@@ -337,7 +338,7 @@ class SelectRegions(object):
         elif event.key == 'l':
             self.add_absline(kind='lya')
         elif event.key == 'm':
-            pass
+            self.update_master()
         # Don't need to explicitly put p in there
         elif event.key == 'q':
             if self._changes:
@@ -349,7 +350,7 @@ class SelectRegions(object):
         elif event.key == 'r':
             self.toggle_residuals()
         elif event.key == 'u':
-            self.update_master()
+            #TODO : undo previous operation
         elif event.key == 'w':
             self.write_data()
         elif event.key == ']':
@@ -361,6 +362,15 @@ class SelectRegions(object):
         elif event.key == '<':
             pass
         self.canvas.draw()
+
+    def autosave(self, ):
+        """
+        For each operation performed on the data, save information about the operation performed.
+        """
+        f = open("{0:s}.logger".format(self.prop._outp), "a+")
+        f.write("\n")
+        f.close()
+        return
 
     def key_release_callback(self, event):
         """
@@ -576,6 +586,10 @@ class Props:
         self._cont = cont
         self._file = ifil
         self._regions = regions
+        # Store some properties of the quasar
+        self._qsoname = qso._name
+        self._qsopath = qso._path
+        self._qsofilename = qso._filename
         self._outp = qso._path + qso._filename.replace(".dat", "")
         self._outf = outf
         self._zem = qso._zem
@@ -602,6 +616,11 @@ class AbsorptionLines:
     def size(self):
         return self.coldens.size
 
+    def alis_datlines(self):
+        datlines = []
+        datlines += ["../data/J0814p5029_HIRES_H_I_1215.7_reg.dat    specid=Lya  fitrange=columns  loadrange=all  resolution=vfwhm(6.280vh)  columns=[wave:0,flux:1,error:2,fitrange:3,continuum:4]  plotone=False  label=HIRES"]
+        return datlines
+
     def alis_modlines(self):
         modlines = []
         # Do the emission
@@ -613,6 +632,36 @@ class AbsorptionLines:
             modlines += ["voigt ion={0:s}  {1:.4f}  {2:.9f}  {3:.3f}  0.0TZERO  blind=False  specid=Lya".format(
                 self.label[ll], self.coldens[0], self.redshift[0], self.bval[0])]
         return modlines
+
+    def alis_parlines(self, name="quasarname"):
+        parlines = []
+        parlines += ["run  ncpus  6"]
+        parlines += ["run ngpus 0"]
+        parlines += ["run nsubpix 5"]
+        parlines += ["run blind False"]
+        parlines += ["run convergence False"]
+        parlines += ["run convcriteria 0.2"]
+        parlines += ["chisq atol 0.01"]
+        parlines += ["chisq xtol 0.0"]
+        parlines += ["chisq ftol 0.0"]
+        parlines += ["chisq gtol 0.0"]
+        parlines += ["chisq fstep 1.3"]
+        parlines += ["chisq miniter 10"]
+        parlines += ["chisq maxiter 3000"]
+        parlines += ["out model True"]
+        parlines += ["out covar {0:s}.mod.out.covar".format(name)]
+        parlines += ["out fits True"]
+        parlines += ["out verbose 1"]
+        parlines += ["out overwrite True"]
+        parlines += ["out plots {0:s}_fits.pdf".format(name)]
+        parlines += ["#plot only True"]
+        parlines += ["plot dims 3x1"]
+        parlines += ["plot ticklabels True"]
+        parlines += ["plot labels True"]
+        parlines += ["plot fitregions True"]
+        parlines += ["plot fits True"]
+        parlines += ["#plot pages 1"]
+        return parlines
 
     def add_absline(self, coldens, redshift, bval, label):
         self.coldens = np.append(self.coldens, coldens)
