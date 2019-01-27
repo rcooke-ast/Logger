@@ -67,7 +67,6 @@ class SelectRegions(object):
         self.curreg = [None for ii in range(self.naxis)]
         self.fitreg = [None for ii in range(self.naxis)]
         self.backgrounds = [None for ii in range(self.naxis)]
-        self.axisidx = 0
         self.mouseidx = 0   # Index of wavelength array where mouse is located
         self._addsub = 0    # Adding a region (1) or removing (0)
         self._start = 0     # Start of a region
@@ -220,19 +219,16 @@ class SelectRegions(object):
         """
         if event.inaxes is None:
             return
-        self.mouseidx = self.get_ind_under_point(event)
+        axisID = self.get_axisID(event)
+        self.mouseidx = self.get_ind_under_point(axisID, event.xdata)
 
-    def get_ind_under_point(self, event):
+    def get_ind_under_point(self, axisID, xdata):
         """
         Get the index of the spectrum closest to the event point (could be a mouse move or key press, or button press)
         """
-        velo = 0.0
-        for i in range(self.naxis):
-            if event.inaxes != self.axs[i]:
-                continue
-            lam = self.lines[i]*(1.0+self._zplot)
-            velo = 299792.458*(self.prop._wave-lam)/lam
-        ind = np.argmin(np.abs(velo-event.xdata))
+        lam = self.lines[axisID]*(1.0+self._zplot)
+        velo = 299792.458*(self.prop._wave-lam)/lam
+        ind = np.argmin(np.abs(velo-xdata))
         return ind
 
     def get_axisID(self, event):
@@ -255,7 +251,8 @@ class SelectRegions(object):
             self._addsub = 1
         elif event.button == 3:
             self._addsub = 0
-        self._start = self.get_ind_under_point(event)
+        axisID = self.get_axisID(event)
+        self._start = self.get_ind_under_point(axisID, event.xdata)
 
     def button_release_callback(self, event):
         """
@@ -273,28 +270,11 @@ class SelectRegions(object):
             return
         if self.canvas.toolbar.mode != "":
             return
-        self._end = self.get_ind_under_point(event)
-        self.update_actors(self.get_axisID(event))
-        # Plot the new actor
-        for i in range(self.naxis):
-            if event.inaxes != self.axs[i]:
-                continue
-            if self.curreg[i] is not None:
-                self.curreg[i].remove()
-                self.curreg[i] = None
-            # Set the axis being used
-            self.axisidx = i
-            # Plot the selected region
-            trans = mtransforms.blended_transform_factory(self.axs[i].transData, self.axs[i].transAxes)
-            self.canvas.restore_region(self.backgrounds[i])
-            lam = self.lines[i]*(1.0+self._zplot)
-            velo = 299792.458*(self.prop._wave-lam)/lam
-            # Find all regions
-            regwhr = np.copy(self.actors[i] == 1)
-            # Fudge to get the leftmost pixel shaded in too
-            regwhr[np.where((self.actors[i][:-1] == 0) & (self.actors[i][1:] == 1))] = True
-            self.curreg[i] = self.axs[i].fill_between(velo, 0, 1, where=regwhr, facecolor='red', alpha=0.5, transform=trans)
-        self.canvas.draw()
+        # Draw an actor
+        axisID = self.get_axisID(event)
+        self._end = self.get_ind_under_point(axisID, event.xdata)
+        self.update_actors(axisID)
+        self.plot_actor(axisID)
 
     def key_press_callback(self, event):
         """
@@ -306,6 +286,7 @@ class SelectRegions(object):
         # ... but not the information box!
         if event.inaxes == self.axi:
             return
+        axisID = self.get_axisID(event)
         # Used keys include:  cdfiklmprquw?[]<>
         if event.key == '?':
             print("============================================================")
@@ -336,7 +317,7 @@ class SelectRegions(object):
 #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
 #            print("------------------------------------------------------------")
         elif event.key == 'c':
-            self.update_actors(self.get_axisID(event), clear=True)
+            self.update_actors(axisID, clear=True)
             self.autosave('c', event)
         elif event.key == 'd':
             self.delete_line()
@@ -348,9 +329,9 @@ class SelectRegions(object):
         elif event.key == 'i':
             self.lineinfo()
         elif event.key == 'k':
-            self.add_absline()
+            self.add_absline(axisID)
         elif event.key == 'l':
-            self.add_absline(kind='lya')
+            self.add_absline(axisID, kind='lya')
         elif event.key == 'm':
             self.update_master()
         # Don't need to explicitly put p in there
@@ -407,9 +388,9 @@ class SelectRegions(object):
         if not event.inaxes:
             return
 
-    def add_absline(self, kind=None):
+    def add_absline(self, axisID, kind=None):
         # Take the rest wavelength directly from the panel (unless kind is specified)
-        wave0 = self.lines[self.axisidx]
+        wave0 = self.lines[axisID]
         label = "H I"
         if kind == 'lya':
             # Use H I Lyman alpha
@@ -492,6 +473,23 @@ class SelectRegions(object):
         self.canvas.draw()
         self.canvas.flush_events()
         self._resid = not self._resid
+
+    def plot_actor(self, axisID):
+        # Plot the new actor
+        if self.curreg[axisID] is not None:
+            self.curreg[axisID].remove()
+            self.curreg[axisID] = None
+        # Plot the selected region
+        trans = mtransforms.blended_transform_factory(self.axs[axisID].transData, self.axs[axisID].transAxes)
+        self.canvas.restore_region(self.backgrounds[axisID])
+        lam = self.lines[axisID]*(1.0+self._zplot)
+        velo = 299792.458*(self.prop._wave-lam)/lam
+        # Find all regions
+        regwhr = np.copy(self.actors[axisID] == 1)
+        # Fudge to get the leftmost pixel shaded in too
+        regwhr[np.where((self.actors[axisID][:-1] == 0) & (self.actors[axisID][1:] == 1))] = True
+        self.curreg[axisID] = self.axs[axisID].fill_between(velo, 0, 1, where=regwhr, facecolor='red', alpha=0.5, transform=trans)
+        self.canvas.draw()
 
     def update_actors(self, axisID, clear=False):
         # Clear all actors if the user requests
