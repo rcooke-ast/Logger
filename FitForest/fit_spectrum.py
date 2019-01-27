@@ -63,7 +63,7 @@ class SelectRegions(object):
         self.prop = prop
         self.atom = atom
         self.veld = vel
-        self._zplot = self.prop._zem     # The plotted redshift at the centre of each panel
+        self._zqso = self.prop._zem     # The plotted redshift at the centre of each panel
         self.curreg = [None for ii in range(self.naxis)]
         self.fitreg = [None for ii in range(self.naxis)]
         self.backgrounds = [None for ii in range(self.naxis)]
@@ -130,7 +130,7 @@ class SelectRegions(object):
         self.annlines = []
         self.anntexts = []
         for i in range(self.naxis):
-            lam = self.lines[i] * (1.0 + self._zplot)
+            lam = self.lines[i] * (1.0 + self._zqso)
             for j in range(self.lines_act.size):
                 velo = 299792.458 * (self.lines[i] * (1.0 + self.lines_act.redshift[j]) - lam) / lam
                 self.annlines.append(self.axs[i].axvline(velo, color='r'))
@@ -188,7 +188,7 @@ class SelectRegions(object):
                 self.model_mst *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
         # Plot the models
         for i in range(self.naxis):
-            lam = self.lines[i]*(1.0+self._zplot)
+            lam = self.lines[i]*(1.0 + self._zqso)
             velo = 299792.458*(self.prop._wave-lam)/lam
             self.modelLines_mst[i] = self.axs[i].plot(velo, self.model_mst, 'b-', linewidth=2.0)
             self.modelLines_act[i] = self.axs[i].plot(velo, self.model_act, 'r-', linewidth=1.0)
@@ -198,7 +198,7 @@ class SelectRegions(object):
         for i in range(self.naxis):
             trans = mtransforms.blended_transform_factory(self.axs[i].transData, self.axs[i].transAxes)
             self.backgrounds[i] = self.canvas.copy_from_bbox(self.axs[i].bbox)
-            lam = self.lines[i]*(1.0+self._zplot)
+            lam = self.lines[i]*(1.0 + self._zqso)
             velo = 299792.458*(self.prop._wave-lam)/lam
             if self.fitreg[i] is not None:
                 self.fitreg[i].remove()
@@ -226,7 +226,7 @@ class SelectRegions(object):
         """
         Get the index of the spectrum closest to the event point (could be a mouse move or key press, or button press)
         """
-        lam = self.lines[axisID]*(1.0+self._zplot)
+        lam = self.lines[axisID]*(1.0 + self._zqso)
         velo = 299792.458*(self.prop._wave-lam)/lam
         ind = np.argmin(np.abs(velo-xdata))
         return ind
@@ -261,7 +261,7 @@ class SelectRegions(object):
         if event.inaxes is None:
             return
         if event.inaxes == self.axi:
-            # TODO : What do we do with this response?
+            # TODO :: What do we do with this response? How do we add this response to autosave?
             if event.xdata > 0.8 and event.xdata < 0.9:
                 answer = "yes"
             elif event.xdata >= 0.9:
@@ -273,7 +273,8 @@ class SelectRegions(object):
         # Draw an actor
         axisID = self.get_axisID(event)
         self._end = self.get_ind_under_point(axisID, event.xdata)
-        self.update_actors(axisID)
+        # Now update the actors
+        self.operations('ua', axisID, self.mouseidx, params=[self._start, self._end, self._addsub])
         self.plot_actor(axisID)
 
     def key_press_callback(self, event):
@@ -287,11 +288,11 @@ class SelectRegions(object):
         if event.inaxes == self.axi:
             return
         axisID = self.get_axisID(event)
-        self.operations(event.key, axisID, autosave=True)
+        self.operations(event.key, axisID, self.mouseidx, autosave=True)
         self.canvas.draw()
 
-    def operations(self, key, axisID, autosave=True):
-        # Used keys include:  cdfiklmprquw?[]<>
+    def operations(self, key, axisID, mouseidx, params=None, autosave=True):
+        # Used keys include:  cdfiklmprquw?[]<>-#
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -301,8 +302,7 @@ class SelectRegions(object):
             print("------------------------------------------------------------")
             print("       FITTING COMMANDS")
             print("k       : Add a line at the specified location (line ID will depend on panel)")
-            print(
-                "l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
+            print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
             # print("m       : Add a metal line to the cursor")
             print("d       : Delete the nearest line to the cursor")
             print("f       : Fit the current regions in all panels with ALIS")
@@ -323,24 +323,30 @@ class SelectRegions(object):
         #            print("------------------------------------------------------------")
         elif key == 'c':
             self.update_actors(axisID, clear=True)
-            if autosave: self.autosave('c', axisID)
+            if autosave: self.autosave('c', axisID, mouseidx)
         elif key == 'd':
-            self.delete_line()
+            self.delete_line(mouseidx)
+            if autosave: self.autosave('d', axisID, mouseidx)
         elif key == 'f':
-            # TODO : Add this functionality
+            # TODO :: Add this functionality
             # Does "accept" in this case imply merge with master, or simply update the actors?
             # I think the latter. 'u' updates/merges to master
+            # TODO :: Do we need to add autosave here?
             self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'i':
-            self.lineinfo()
+            self.lineinfo(mouseidx)
         elif key == 'k':
-            self.add_absline(axisID)
+            self.add_absline(axisID, mouseidx)
+            if autosave: self.autosave('k', axisID, mouseidx)
         elif key == 'l':
-            self.add_absline(axisID, kind='lya')
+            self.add_absline(axisID, mouseidx, kind='lya')
+            if autosave: self.autosave('l', axisID, mouseidx)
         elif key == 'm':
             self.update_master()
+            if autosave: self.autosave('m', axisID, mouseidx)
         # Don't need to explicitly put p in there
         elif key == 'q':
+            # TODO :: Add this to infobox
             if self._changes:
                 print("WARNING: There are unsaved changes!!")
                 print("Press q again to exit")
@@ -348,30 +354,42 @@ class SelectRegions(object):
             else:
                 sys.exit()
         elif key == 'r':
-            self.toggle_residuals()
+            if params is None:
+                resid = self._resid
+            else:
+                resid = params[0]
+            self.toggle_residuals(resid)
+            if autosave: self.autosave('r', axisID, mouseidx, params=[resid])
         elif key == 'u':
-        # TODO :: undo previous operation
+            # TODO :: undo previous operation
+            pass
         elif key == 'w':
+            # TODO :: This needs to be updated
             self.write_data()
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
+            if autosave: self.autosave(']', axisID, mouseidx)
         elif key == '[':
             self.shift_waverange(shiftdir=-1)
+            if autosave: self.autosave('[', axisID, mouseidx)
         elif key == '>':
             pass
         elif key == '<':
             pass
+        elif key == 'ua':
+            self.update_actors(axisID, locs=params)
+            if autosave: self.autosave('ua', axisID, mouseidx, params=params)
 
-    def autosave(self, kbID, axisID):
+    def autosave(self, kbID, axisID, mouseidx, params=None):
         """
         For each operation performed on the data, save information about the operation performed.
         """
-        # TODO :: add autosave functionality
         f = open("{0:s}.logger".format(self.prop._outp), "a+")
-        if kbID == 'c':
-            f.write("c {0:d} True\n".format(axisID))
+        if params is None:
+            f.write("{0:s}, {1:d}, {2:d}\n".format(kbID, axisID, mouseidx))
         else:
-            pass
+            strlist = ','.join(str(pp) for pp in params)
+            f.write("{0:s}, {1:d}, {2:d}, params=[{3:s}]\n".format(kbID, axisID, mouseidx, strlist))
         f.close()
         return
 
@@ -391,7 +409,7 @@ class SelectRegions(object):
         if not event.inaxes:
             return
 
-    def add_absline(self, axisID, kind=None):
+    def add_absline(self, axisID, mouseidx, kind=None):
         # Take the rest wavelength directly from the panel (unless kind is specified)
         wave0 = self.lines[axisID]
         label = "H I"
@@ -405,21 +423,21 @@ class SelectRegions(object):
             wave0 = 0.0
             label = "METAL"
         # Get a quick fit to estimate some parameters
-        coldens, zabs, bval = self.fit_oneline(wave0)
+        coldens, zabs, bval = self.fit_oneline(wave0, mouseidx)
         self.lines_act.add_absline(coldens, zabs, bval, label)
         self.draw_lines()
         self.draw_model()
         self.canvas.draw()
 
-    def delete_line(self):
+    def delete_line(self, mouseidx):
         if self.lines_act.size == 0:
             return
-        self.lines_act.delete_absline(self.prop._wave[self.mouseidx], self.lines)
+        self.lines_act.delete_absline(self.prop._wave[mouseidx], self.lines)
         self.draw_lines()
         self.draw_model()
         self.canvas.draw()
 
-    def fit_oneline(self, wave0):
+    def fit_oneline(self, wave0, mouseidx):
         """ This performs a very quick fit to the line (using only one actor) """
         w = np.where(self.lactor == 1)
         if w[0].size <= 3:
@@ -428,7 +446,7 @@ class SelectRegions(object):
 
         # Pick some starting parameters
         coldens0 = 14.0
-        zabs0 = self.prop._wave[self.mouseidx] / wave0 - 1.0
+        zabs0 = self.prop._wave[mouseidx] / wave0 - 1.0
         bval0 = 10.0
         p0 = [coldens0, zabs0, bval0]
 
@@ -440,7 +458,7 @@ class SelectRegions(object):
         # Prepare the data to be fitted
         if self._resid:
             flxfit = self.prop._flux / (self.model_mst*self.model_act)
-            flefit = self.prop._flue / (self.model_mst*self.model_act)
+            flefit = self.prop._flue# / (self.model_mst*self.model_act)
         else:
             flxfit = self.prop._flux
             flefit = self.prop._flue
@@ -464,18 +482,18 @@ class SelectRegions(object):
             self.axs[i].set_ylim([ymn, ymx])
         self.canvas.draw()
 
-    def lineinfo(self):
-        self.lines_act.lineinfo(self.prop._wave[self.mouseidx], self.lines)
+    def lineinfo(self, mouseidx):
+        self.lines_act.lineinfo(self.prop._wave[mouseidx], self.lines)
 
-    def toggle_residuals(self):
+    def toggle_residuals(self, resid):
         for i in range(self.naxis):
-            if self._resid:
+            if resid:
                 self.specs[i].set_ydata(self.prop._flux/(self.model_mst*self.model_act))
             else:
                 self.specs[i].set_ydata(self.prop._flux)
         self.canvas.draw()
         self.canvas.flush_events()
-        self._resid = not self._resid
+        self._resid = not resid
 
     def plot_actor(self, axisID):
         # Plot the new actor
@@ -485,7 +503,7 @@ class SelectRegions(object):
         # Plot the selected region
         trans = mtransforms.blended_transform_factory(self.axs[axisID].transData, self.axs[axisID].transAxes)
         self.canvas.restore_region(self.backgrounds[axisID])
-        lam = self.lines[axisID]*(1.0+self._zplot)
+        lam = self.lines[axisID]*(1.0 + self._zqso)
         velo = 299792.458*(self.prop._wave-lam)/lam
         # Find all regions
         regwhr = np.copy(self.actors[axisID] == 1)
@@ -494,25 +512,27 @@ class SelectRegions(object):
         self.curreg[axisID] = self.axs[axisID].fill_between(velo, 0, 1, where=regwhr, facecolor='red', alpha=0.5, transform=trans)
         self.canvas.draw()
 
-    def update_actors(self, axisID, clear=False):
+    def update_actors(self, axisID, locs=None, clear=False):
         # Clear all actors if the user requests
         if clear:
             for i in range(self.naxis):
                 self.actors[i][:] = 0
                 self.lactor[:] = 0
             return
+        else:
+            start, end, addsub = locs[0], locs[1], locs[2]
         # Otherwise, update the actors
-        if self._end != self._start:
+        if end != start:
             # Reset start if start > end
-            if self._start > self._end:
-                tmp = self._start
-                self._start = self._end
-                self._end = tmp
+            if start > end:
+                tmp = start
+                start = end
+                end = tmp
             # Set the pixels for the current selection
             self.lactor[:] = 0
-            self.lactor[self._start:self._end] = self._addsub
+            self.lactor[start:end] = addsub
             # Set the corresponding pixels in the actor
-            self.actors[axisID][self._start:self._end] = self._addsub
+            self.actors[axisID][start:end] = addsub
 
     def update_infobox(self, message="Press '?' to list the available options",
                        yesno=True, default=False):
@@ -576,7 +596,7 @@ class SelectRegions(object):
             lam = self.lines[i]*(1.0+self.prop._zem)
             velo = 299792.458*(self.prop._wave-lam)/lam
             xmn, xmx = self.axs[i].get_xlim()
-            wsv = np.where((velo>xmn) & (velo<xmx))
+            wsv = np.where((velo > xmn) & (velo < xmx))
             idtxt = "H_I_{0:.1f}".format(self.lines[i])
             outnm = self.prop._outp + "_" + idtxt + "_reg.dat"
             np.savetxt(outnm, np.transpose((self.prop._wave[wsv], self.prop._flux[wsv]*self.prop._cont[wsv], self.prop._flue[wsv]*self.prop._cont[wsv], self.prop._regions[wsv])))
