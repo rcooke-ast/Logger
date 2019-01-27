@@ -254,7 +254,10 @@ class SelectRegions(object):
         elif event.button == 3:
             self._addsub = 0
         axisID = self.get_axisID(event)
-        self._start = self.get_ind_under_point(axisID, event.xdata)
+        # Check that the cursor is in one of the data panels
+        if axisID is not None:
+            if axisID < self.naxis:
+                self._start = self.get_ind_under_point(axisID, event.xdata)
 
     def button_release_callback(self, event):
         """
@@ -274,10 +277,13 @@ class SelectRegions(object):
             return
         # Draw an actor
         axisID = self.get_axisID(event)
-        self._end = self.get_ind_under_point(axisID, event.xdata)
-        # Now update the actors
-        self.operations('ua', axisID, self.mouseidx, params=[self._start, self._end, self._addsub])
-        self.plot_actor(axisID)
+        # Check that the cursor is in one of the data panels
+        if axisID is not None:
+            if axisID < self.naxis:
+                self._end = self.get_ind_under_point(axisID, event.xdata)
+                # Now update the actors
+                self.operations('ua', axisID, self.mouseidx, params=[self._start, self._end, self._addsub])
+                self.plot_actor(axisID)
 
     def key_press_callback(self, event):
         """
@@ -460,7 +466,7 @@ class SelectRegions(object):
         # Prepare the data to be fitted
         if self._resid:
             flxfit = self.prop._flux / (self.model_mst*self.model_act)
-            flefit = self.prop._flue# / (self.model_mst*self.model_act)
+            flefit = self.prop._flue / (self.model_mst*self.model_act)
         else:
             flxfit = self.prop._flux
             flefit = self.prop._flue
@@ -490,9 +496,11 @@ class SelectRegions(object):
     def toggle_residuals(self, resid):
         for i in range(self.naxis):
             if resid:
-                self.specs[i].set_ydata(self.prop._flux/(self.model_mst*self.model_act))
-            else:
+                # If residuals are currently being shown, plot the original data
                 self.specs[i].set_ydata(self.prop._flux)
+            else:
+                # Otherwise, plot the residuals
+                self.specs[i].set_ydata(self.prop._flux/(self.model_mst*self.model_act))
         self.canvas.draw()
         self.canvas.flush_events()
         self._resid = not resid
