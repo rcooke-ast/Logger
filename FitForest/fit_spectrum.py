@@ -220,7 +220,9 @@ class SelectRegions(object):
         if event.inaxes is None:
             return
         axisID = self.get_axisID(event)
-        self.mouseidx = self.get_ind_under_point(axisID, event.xdata)
+        if axisID is not None:
+            if axisID < self.naxis:
+                self.mouseidx = self.get_ind_under_point(axisID, event.xdata)
 
     def get_ind_under_point(self, axisID, xdata):
         """
