@@ -287,8 +287,12 @@ class SelectRegions(object):
         if event.inaxes == self.axi:
             return
         axisID = self.get_axisID(event)
+        self.operations(event.key, axisID, autosave=True)
+        self.canvas.draw()
+
+    def operations(self, key, axisID, autosave=True):
         # Used keys include:  cdfiklmprquw?[]<>
-        if event.key == '?':
+        if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
             print("p       : toggle pan/zoom with the cursor")
@@ -297,8 +301,9 @@ class SelectRegions(object):
             print("------------------------------------------------------------")
             print("       FITTING COMMANDS")
             print("k       : Add a line at the specified location (line ID will depend on panel)")
-            print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
-            #print("m       : Add a metal line to the cursor")
+            print(
+                "l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
+            # print("m       : Add a metal line to the cursor")
             print("d       : Delete the nearest line to the cursor")
             print("f       : Fit the current regions in all panels with ALIS")
             print("c       : Clear current fitting (start over)")
@@ -311,61 +316,59 @@ class SelectRegions(object):
             print("i       : Obtain information on the line closest to the cursor")
             print("r       : toggle residuals plotting (i.e. remove master model from data)")
             print("------------------------------------------------------------")
-#            print("       ATOMIC DATA OF THE CURRENT LINE")
-#            print("{0:s} {1:s}  {2:f}".format(self.atom._atom_atm[self.linecur].strip(),self.atom._atom_ion[self.linecur].strip(),self.atom._atom_wvl[self.linecur]))
-#            print("Observed wavelength = {0:f}".format(self.atom._atom_wvl[self.linecur]*(1.0+self.prop._zem)))
-#            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
-#            print("------------------------------------------------------------")
-        elif event.key == 'c':
+        #            print("       ATOMIC DATA OF THE CURRENT LINE")
+        #            print("{0:s} {1:s}  {2:f}".format(self.atom._atom_atm[self.linecur].strip(),self.atom._atom_ion[self.linecur].strip(),self.atom._atom_wvl[self.linecur]))
+        #            print("Observed wavelength = {0:f}".format(self.atom._atom_wvl[self.linecur]*(1.0+self.prop._zem)))
+        #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
+        #            print("------------------------------------------------------------")
+        elif key == 'c':
             self.update_actors(axisID, clear=True)
-            self.autosave('c', event)
-        elif event.key == 'd':
+            if autosave: self.autosave('c', axisID)
+        elif key == 'd':
             self.delete_line()
-        elif event.key == 'f':
+        elif key == 'f':
             # TODO : Add this functionality
             # Does "accept" in this case imply merge with master, or simply update the actors?
             # I think the latter. 'u' updates/merges to master
             self.update_infobox(message="Accept fit?", yesno=True)
-        elif event.key == 'i':
+        elif key == 'i':
             self.lineinfo()
-        elif event.key == 'k':
+        elif key == 'k':
             self.add_absline(axisID)
-        elif event.key == 'l':
+        elif key == 'l':
             self.add_absline(axisID, kind='lya')
-        elif event.key == 'm':
+        elif key == 'm':
             self.update_master()
         # Don't need to explicitly put p in there
-        elif event.key == 'q':
+        elif key == 'q':
             if self._changes:
                 print("WARNING: There are unsaved changes!!")
                 print("Press q again to exit")
                 self._changes = False
             else:
                 sys.exit()
-        elif event.key == 'r':
+        elif key == 'r':
             self.toggle_residuals()
-        elif event.key == 'u':
-            # TODO :: undo previous operation
-        elif event.key == 'w':
+        elif key == 'u':
+        # TODO :: undo previous operation
+        elif key == 'w':
             self.write_data()
-        elif event.key == ']':
+        elif key == ']':
             self.shift_waverange(shiftdir=+1)
-        elif event.key == '[':
+        elif key == '[':
             self.shift_waverange(shiftdir=-1)
-        elif event.key == '>':
+        elif key == '>':
             pass
-        elif event.key == '<':
+        elif key == '<':
             pass
-        self.canvas.draw()
 
-    def autosave(self, kbID, event):
+    def autosave(self, kbID, axisID):
         """
         For each operation performed on the data, save information about the operation performed.
         """
         # TODO :: add autosave functionality
         f = open("{0:s}.logger".format(self.prop._outp), "a+")
         if kbID == 'c':
-            axisID = self.get_axisID(event)
             f.write("c {0:d} True\n".format(axisID))
         else:
             pass
