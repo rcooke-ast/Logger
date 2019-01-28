@@ -402,19 +402,44 @@ class SelectRegions(object):
         return
 
     def autosave_load(self):
-        # TODO :: complete this preamble with all relevant information about each execution of the code
         outname = "{0:s}.logger".format(self.prop._outp)
         if os.path.exists(outname):
             print("The following file already exists:\n{0:s}".format(outname))
             answer = ''
-            while (answer != 'y') and (answer != 'n') and (answer != 'r'):
-                answer = input("Would you like to overwrite (y/n) or rename (r)? ")
-            Insert options here!!
-        # Make sure that the code checks if the file is about to be overwritten
-        f = open(outname, "a+")
-        f.write("# This LOGGER file was generated on {0:s}\n".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        f.write("------------------------------\n") # Separate preamble from code operations with a series of dashes
-        f.close()
+            while (answer != 'o') and (answer != 'l'):
+                answer = input("Would you like to overwrite (o) or load from file (l)? ")
+            if answer == 'o':
+                f = open(outname, "w")
+                f.write("# This LOGGER file was generated on {0:s}\n".format(
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                # Now save relevant information about how this code is run
+                # TODO :: insert relevant information here
+                # Separate preamble from code operations with a series of dashes
+                f.write("------------------------------\n")
+                f.close()
+            else:
+                print("Loading file...")
+                lines = open(outname, "r").readlines()
+                loadops = False
+                for ll, line in enumerate(lines):
+                    if line[0] == "#":
+                        # A comment line
+                        continue
+                    elif line[0] == "-":
+                        # End of file checks, begin loading operations
+                        print("All checks passed! Loading operations (this may take a while...)")
+                        loadops = True
+                        continue
+                    if not loadops:
+                        # Check that the file is consistent with this run of the code
+                        # TODO :: check the loaded file is consistent!
+                    else:
+                        progress = int(100*ll/(len(lines)-1))
+                        sys.stdout.write("Load progress: {0:d}%   \r".format(progress))
+                        sys.stdout.flush()
+                        # Load the operations
+                        txtop = "self.operations({0:s}, autosave=False)".format(line.strip('\n'))
+                        eval(txtop)
         return
 
     def key_release_callback(self, event):
