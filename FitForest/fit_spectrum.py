@@ -114,7 +114,7 @@ class SelectRegions(object):
 
         # Just before the canvas is drawn, generate the autosave preamble
         # to save the properties of this execution of the code
-        self.autosave_preamble()
+        self.autosave_load()
         # Draw the canvas
         self.canvas.draw()
 
@@ -401,10 +401,17 @@ class SelectRegions(object):
         f.close()
         return
 
-    def autosave_preamble(self):
+    def autosave_load(self):
         # TODO :: complete this preamble with all relevant information about each execution of the code
+        outname = "{0:s}.logger".format(self.prop._outp)
+        if os.path.exists(outname):
+            print("The following file already exists:\n{0:s}".format(outname))
+            answer = ''
+            while (answer != 'y') and (answer != 'n') and (answer != 'r'):
+                answer = input("Would you like to overwrite (y/n) or rename (r)? ")
+            Insert options here!!
         # Make sure that the code checks if the file is about to be overwritten
-        f = open("{0:s}.logger".format(self.prop._outp), "a+")
+        f = open(outname, "a+")
         f.write("# This LOGGER file was generated on {0:s}\n".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         f.write("------------------------------\n") # Separate preamble from code operations with a series of dashes
         f.close()
