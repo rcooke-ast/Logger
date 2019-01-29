@@ -413,12 +413,11 @@ class SelectRegions(object):
                 f.write("# This LOGGER file was generated on {0:s}\n".format(
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 # Now save relevant information about how this code is run
-                # TODO :: insert relevant information here
-                f.write("naxis {0:d}".format(self.naxis))
-                QSONAME
-                self.prop = prop
-                self.atom = atom
-                self.lines = lines
+                f.write("self.naxis=={0:d}\n".format(self.naxis))
+                f.write("self.prop._qsoname=={0:s}\n".format(self.prop._qsoname))
+                f.write("self.prop._qsopath=={0:s}\n".format(self.prop._qsopath))
+                for ll in range(self.lines.size):
+                    f.write("abs(self.lines[{0:d}]-{1:f})<1.0E-4\n".format(ll, self.lines[ll]))
                 # Separate preamble from code operations with a series of dashes
                 f.write("------------------------------\n")
                 f.close()
@@ -437,7 +436,10 @@ class SelectRegions(object):
                         continue
                     if not loadops:
                         # Check that the file is consistent with this run of the code
-                        # TODO :: check the loaded file is consistent!
+                        if not eval(line.strip("\n")):
+                            print("The Logger file:\n{0:s}\nis not consistent with the current setup.".format(outname))
+                            print("Please delete this file, or change the current setup to match, then rerun the code.")
+                            sys.exit()
                     else:
                         progress = int(100*ll/(len(lines)-1))
                         sys.stdout.write("Load progress: {0:d}%   \r".format(progress))
