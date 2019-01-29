@@ -414,6 +414,11 @@ class SelectRegions(object):
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 # Now save relevant information about how this code is run
                 # TODO :: insert relevant information here
+                f.write("naxis {0:d}".format(self.naxis))
+                QSONAME
+                self.prop = prop
+                self.atom = atom
+                self.lines = lines
                 # Separate preamble from code operations with a series of dashes
                 f.write("------------------------------\n")
                 f.close()
