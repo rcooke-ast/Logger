@@ -394,59 +394,61 @@ class SelectRegions(object):
         """
         f = open("{0:s}.logger".format(self.prop._outp), "a+")
         if params is None:
-            f.write("{0:s}, {1:d}, {2:d}\n".format(kbID, axisID, mouseidx))
+            f.write("'{0:s}', {1:d}, {2:d}\n".format(kbID, axisID, mouseidx))
         else:
             strlist = ','.join(str(pp) for pp in params)
-            f.write("{0:s}, {1:d}, {2:d}, params=[{3:s}]\n".format(kbID, axisID, mouseidx, strlist))
+            f.write("'{0:s}', {1:d}, {2:d}, params=[{3:s}]\n".format(kbID, axisID, mouseidx, strlist))
         f.close()
         return
 
     def autosave_load(self):
         outname = "{0:s}.logger".format(self.prop._outp)
+        answer = ''
         if os.path.exists(outname):
             print("The following file already exists:\n{0:s}".format(outname))
-            answer = ''
             while (answer != 'o') and (answer != 'l'):
                 answer = input("Would you like to overwrite (o) or load from file (l)? ")
-            if answer == 'o':
-                f = open(outname, "w")
-                f.write("# This LOGGER file was generated on {0:s}\n".format(
-                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                # Now save relevant information about how this code is run
-                f.write("self.naxis=={0:d}\n".format(self.naxis))
-                f.write("self.prop._qsoname=={0:s}\n".format(self.prop._qsoname))
-                f.write("self.prop._qsopath=={0:s}\n".format(self.prop._qsopath))
-                for ll in range(self.lines.size):
-                    f.write("abs(self.lines[{0:d}]-{1:f})<1.0E-4\n".format(ll, self.lines[ll]))
-                # Separate preamble from code operations with a series of dashes
-                f.write("------------------------------\n")
-                f.close()
-            else:
-                print("Loading file...")
-                lines = open(outname, "r").readlines()
-                loadops = False
-                for ll, line in enumerate(lines):
-                    if line[0] == "#":
-                        # A comment line
-                        continue
-                    elif line[0] == "-":
-                        # End of file checks, begin loading operations
-                        print("All checks passed! Loading operations (this may take a while...)")
-                        loadops = True
-                        continue
-                    if not loadops:
-                        # Check that the file is consistent with this run of the code
-                        if not eval(line.strip("\n")):
-                            print("The Logger file:\n{0:s}\nis not consistent with the current setup.".format(outname))
-                            print("Please delete this file, or change the current setup to match, then rerun the code.")
-                            sys.exit()
-                    else:
-                        progress = int(100*ll/(len(lines)-1))
-                        sys.stdout.write("Load progress: {0:d}%   \r".format(progress))
-                        sys.stdout.flush()
-                        # Load the operations
-                        txtop = "self.operations({0:s}, autosave=False)".format(line.strip('\n'))
-                        eval(txtop)
+        else:
+            answer = 'o'
+        if answer == 'o':
+            f = open(outname, "w")
+            f.write("# This LOGGER file was generated on {0:s}\n".format(
+                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            # Now save relevant information about how this code is run
+            f.write("self.naxis=={0:d}\n".format(self.naxis))
+            f.write("self.prop._qsoname=='{0:s}'\n".format(self.prop._qsoname))
+            f.write("self.prop._qsopath=='{0:s}'\n".format(self.prop._qsopath))
+            for ll in range(self.lines.size):
+                f.write("abs(self.lines[{0:d}]-{1:f})<1.0E-4\n".format(ll, self.lines[ll]))
+            # Separate preamble from code operations with a series of dashes
+            f.write("------------------------------\n")
+            f.close()
+        elif answer == 'l':
+            print("Loading file...")
+            lines = open(outname, "r").readlines()
+            loadops = False
+            for ll, line in enumerate(lines):
+                if line[0] == "#":
+                    # A comment line
+                    continue
+                elif line[0] == "-":
+                    # End of file checks, begin loading operations
+                    print("All checks passed! Loading operations (this may take a while...)")
+                    loadops = True
+                    continue
+                if not loadops:
+                    # Check that the file is consistent with this run of the code
+                    if not eval(line.strip("\n")):
+                        print("The Logger file:\n{0:s}\nis not consistent with the current setup.".format(outname))
+                        print("Please delete this file, or change the current setup to match, then rerun the code.")
+                        sys.exit()
+                else:
+                    progress = int(100*ll/(len(lines)-1))
+                    sys.stdout.write("Load progress: {0:d}%   \r".format(progress))
+                    sys.stdout.flush()
+                    # Load the operations
+                    txtop = "self.operations({0:s}, autosave=False)".format(line.strip('\n'))
+                    eval(txtop)
         return
 
     def key_release_callback(self, event):
