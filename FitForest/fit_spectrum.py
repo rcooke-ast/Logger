@@ -4,6 +4,7 @@ import sys
 import datetime
 import numpy as np
 import matplotlib
+import pickle
 from matplotlib.lines import Line2D
 import matplotlib.transforms as mtransforms
 from quasars import QSO
@@ -114,7 +115,7 @@ class SelectRegions(object):
 
         # Just before the canvas is drawn, generate the autosave preamble
         # to save the properties of this execution of the code
-        self.autosave_load()
+        self.autoload()
         # Draw the canvas
         self.canvas.draw()
 
@@ -351,7 +352,9 @@ class SelectRegions(object):
             if autosave: self.autosave('l', axisID, mouseidx)
         elif key == 'm':
             self.update_master()
-            if autosave: self.autosave('m', axisID, mouseidx)
+            if autosave:
+                self.autosave('m', axisID, mouseidx)
+                self.autosave_quick()
         # Don't need to explicitly put p in there
         elif key == 'q':
             # TODO :: Add this to infobox
@@ -401,13 +404,27 @@ class SelectRegions(object):
         f.close()
         return
 
-    def autosave_load(self):
+    def autosave_quick(self):
+        """
+        Save the master lines if we want to perform a quick load,
+        without having to recalculate the entire analysis process
+        performed on the data.
+        """
+        # First write the regions
+        np.save("{0:s}_master.regions".format(self.prop._outp), self.prop._regions)
+        # Now write the lines
+        with open("{0:s}_master.lines".format(self.prop._outp), 'wb') as f:
+            # Pickle the master lines using the highest protocol available.
+            pickle.dump(self.lines_mst, f, pickle.HIGHEST_PROTOCOL)
+        return
+
+    def autoload(self):
         outname = "{0:s}.logger".format(self.prop._outp)
         answer = ''
         if os.path.exists(outname):
             print("The following file already exists:\n{0:s}".format(outname))
-            while (answer != 'o') and (answer != 'l'):
-                answer = input("Would you like to overwrite (o) or load from file (l)? ")
+            while (answer != 'o') and (answer != 'l') and (answer != 'q'):
+                answer = input("Would you like to overwrite (o), load from file (l), or load quickly (q)? ")
         else:
             answer = 'o'
         if answer == 'o':
@@ -449,6 +466,11 @@ class SelectRegions(object):
                     # Load the operations
                     txtop = "self.operations({0:s}, autosave=False)".format(line.strip('\n'))
                     eval(txtop)
+        elif answer == 'q':
+            # Perform a quick load of the master lines and master regions
+            self.prop._regions = np.load("{0:s}_master.regions.npy".format(self.prop._outp))
+            with open("{0:s}_master.lines".format(self.prop._outp), 'rb') as f:
+                self.lines_mst = pickle.load(f)
         return
 
     def key_release_callback(self, event):
@@ -472,10 +494,12 @@ class SelectRegions(object):
             wave0 = 0.0
             label = "METAL"
         # Get a quick fit to estimate some parameters
-        coldens, zabs, bval = self.fit_oneline(wave0, mouseidx)
-        self.lines_act.add_absline(coldens, zabs, bval, label)
-        self.draw_lines()
-        self.draw_model()
+        fitvals = self.fit_oneline(wave0, mouseidx)
+        if fitvals is not None:
+            coldens, zabs, bval = fitvals
+            self.lines_act.add_absline(coldens, zabs, bval, label)
+            self.draw_lines()
+            self.draw_model()
         self.canvas.draw()
 
     def delete_line(self, mouseidx):
@@ -517,6 +541,7 @@ class SelectRegions(object):
             self.update_infobox(default=True)
         except RuntimeError:
             self.update_infobox(message="ERROR: Optimal parameters not found in fit_oneline")
+            return None
         # Check if any of the parameters have gone "out of bounds"
         return popt[0], popt[1], popt[2]
 
