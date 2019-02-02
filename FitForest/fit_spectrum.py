@@ -380,7 +380,7 @@ class SelectRegions(object):
             self.toggle_residuals(resid)
             if autosave: self.autosave('r', axisID, mouseidx, params=[resid])
         elif key == 'u':
-            # TODO :: undo previous operation
+            # TODO :: undo previous operation -- maybe pickle and unpickle a quickload/quicksave?
             pass
         elif key == 'w':
             # TODO :: This needs to be updated
