@@ -73,7 +73,7 @@ class SelectRegions(object):
         self._start = 0     # Start of a region
         self._end = 0       # End of a region
         self._resid = False  # Are the residuals currently being plotted?
-        self._changes = False
+        self._qconf = False  # Confirm quit message
         self.annlines = []
         self.anntexts = []
 
@@ -213,6 +213,8 @@ class SelectRegions(object):
             self.axs[i].set_yscale("linear")
         self.draw_lines()
         self.draw_model()
+        # TODO :: Need to stop calculating the model so frequently
+        print("drawing from callback!")
 
     def mouse_move_callback(self, event):
         """
@@ -301,6 +303,14 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def operations(self, key, axisID, mouseidx, params=None, autosave=True):
+
+        # Check if the user really wants to quit
+        if key == 'q' and self._qconf:
+            sys.exit()
+        elif self._qconf:
+            self.update_infobox(default=True)
+            self._qconf = False
+
         # Used keys include:  cdfiklmprquw?[]<>-#
         if key == '?':
             print("============================================================")
@@ -357,11 +367,9 @@ class SelectRegions(object):
                 self.autosave_quick()
         # Don't need to explicitly put p in there
         elif key == 'q':
-            # TODO :: Add this to infobox
-            if self._changes:
-                print("WARNING: There are unsaved changes!!")
-                print("Press q again to exit")
-                self._changes = False
+            if self.lines_act.size != 0:
+                self.update_infobox(message="WARNING: There are unsaved changes!!\nPress q again to exit", yesno=False)
+                self._qconf = True
             else:
                 sys.exit()
         elif key == 'r':
