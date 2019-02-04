@@ -64,6 +64,7 @@ class SelectRegions(object):
         self.prop = prop
         self.atom = atom
         self.veld = vel
+        self._xmnsv, self._xmxsv = -self.veld, self.veld
         self._zqso = self.prop._zem     # The plotted redshift at the centre of each panel
         self.curreg = [None for ii in range(self.naxis)]
         self.fitreg = [None for ii in range(self.naxis)]
@@ -88,6 +89,8 @@ class SelectRegions(object):
         self.lines_act = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
         self.actors = [np.zeros(self.prop._wave.size) for ii in range(self.naxis)]
         self.lactor = np.zeros(self.prop._wave.size)  # Just the previously selected actor
+        self.model_act = np.ones(self.prop._wave.size)
+        self.model_mst = np.ones(self.prop._wave.size)
 
         # Unset some of the matplotlib keymaps
         matplotlib.pyplot.rcParams['keymap.fullscreen'] = ''        # toggling fullscreen (Default: f, ctrl+f)
@@ -177,16 +180,6 @@ class SelectRegions(object):
                 fv = self.atom._atom_fvl[atidx]
                 gm = self.atom._atom_gam[atidx]
                 self.model_act *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
-        # Generate the model curve for the master spectrum
-        self.model_mst = np.ones(self.prop._wave.size)
-        for i in range(self.lines_mst.size):
-            for j in range(self.naxis):
-                p0, p1, p2 = self.lines_mst.coldens[i], self.lines_mst.redshift[i], self.lines_mst.bval[i]
-                atidx = np.argmin(np.abs(self.lines[j]-self.atom._atom_wvl))
-                wv = self.lines[j]
-                fv = self.atom._atom_fvl[atidx]
-                gm = self.atom._atom_gam[atidx]
-                self.model_mst *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
         # Plot the models
         for i in range(self.naxis):
             lam = self.lines[i]*(1.0 + self._zqso)
@@ -311,7 +304,7 @@ class SelectRegions(object):
             self.update_infobox(default=True)
             self._qconf = False
 
-        # Used keys include:  cdfiklmprquw?[]<>-#
+        # Used keys include:  bcdfgiklmprquw?[]<>-#
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -332,6 +325,8 @@ class SelectRegions(object):
             print("       INTERACTION COMMANDS")
             print("[ / ]   : pan left and right")
             print("< / >   : zoom in and out")
+            print("g       : Go to (centre the mouse position in any panel as Lya in the top left panel)")
+            print("b       : Go back (centre the mouse position in any panel as the position before moving)")
             print("i       : Obtain information on the line closest to the cursor")
             print("r       : toggle residuals plotting (i.e. remove master model from data)")
             print("------------------------------------------------------------")
@@ -340,6 +335,8 @@ class SelectRegions(object):
         #            print("Observed wavelength = {0:f}".format(self.atom._atom_wvl[self.linecur]*(1.0+self.prop._zem)))
         #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
         #            print("------------------------------------------------------------")
+        elif key == 'b':
+            self.goback()
         elif key == 'c':
             self.update_actors(axisID, clear=True)
             if autosave: self.autosave('c', axisID, mouseidx)
@@ -352,6 +349,8 @@ class SelectRegions(object):
             # I think the latter. 'u' updates/merges to master
             # TODO :: Do we need to add autosave here?
             self.update_infobox(message="Accept fit?", yesno=True)
+        elif key == 'g':
+            self.goto(mouseidx)
         elif key == 'i':
             self.lineinfo(mouseidx)
         elif key == 'k':
@@ -479,6 +478,16 @@ class SelectRegions(object):
             self.prop._regions = np.load("{0:s}_master.regions.npy".format(self.prop._outp))
             with open("{0:s}_master.lines".format(self.prop._outp), 'rb') as f:
                 self.lines_mst = pickle.load(f)
+            # Once the master lines are loaded, generate the model curve for the actors
+            self.model_mst = np.ones(self.prop._wave.size)
+            for i in range(self.lines_mst.size):
+                for j in range(self.naxis):
+                    p0, p1, p2 = self.lines_mst.coldens[i], self.lines_mst.redshift[i], self.lines_mst.bval[i]
+                    atidx = np.argmin(np.abs(self.lines[j]-self.atom._atom_wvl))
+                    wv = self.lines[j]
+                    fv = self.atom._atom_fvl[atidx]
+                    gm = self.atom._atom_gam[atidx]
+                    self.model_mst *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
         return
 
     def key_release_callback(self, event):
@@ -552,6 +561,28 @@ class SelectRegions(object):
             return None
         # Check if any of the parameters have gone "out of bounds"
         return popt[0], popt[1], popt[2]
+
+    def goto(self, mouseidx):
+        # Store the old values
+        self._xmnsv, self._xmxsv = self.axs[0].get_xlim()
+        # Set the new values
+        lam = self.lines[0]*(1.0+self.prop._zem)
+        vnew = 299792.458*(self.prop._wave[mouseidx]-lam)/lam
+        xmn, xmx = vnew-self.veld, vnew+self.veld
+        ymn, ymx = self.axs[0].get_ylim()
+        for i in range(len(self.lines)):
+            self.axs[i].set_xlim([xmn, xmx])
+            self.axs[i].set_ylim([ymn, ymx])
+        self.canvas.draw()
+
+    def goback(self):
+        # Go back to the old x coordinate values
+        xmn, xmx = self._xmnsv, self._xmxsv
+        ymn, ymx = self.axs[0].get_ylim()
+        for i in range(len(self.lines)):
+            self.axs[i].set_xlim([xmn, xmx])
+            self.axs[i].set_ylim([ymn, ymx])
+        self.canvas.draw()
 
     def shift_waverange(self, shiftdir=-1):
         xmn, xmx = self.axs[0].get_xlim()
