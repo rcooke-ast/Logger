@@ -304,7 +304,7 @@ class SelectRegions(object):
             self.update_infobox(default=True)
             self._qconf = False
 
-        # Used keys include:  bcdfgiklmprquw?[]<>-#
+        # Used keys include:  abcdfgiklmprquw?[]<>-#
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -316,7 +316,8 @@ class SelectRegions(object):
             print("k       : Add a line at the specified location (line ID will depend on panel)")
             print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
             # print("m       : Add a metal line to the cursor")
-            print("d       : Delete the nearest line to the cursor")
+            print("d       : Delete the line nearest to the cursor")
+            print("a       : Adjust the column density and  bval of the line nearest to the cursor")
             print("f       : Fit the current regions in all panels with ALIS")
             print("c       : Clear current fitting (start over)")
             print("m       : Merge current fitting into master model and master regions")
@@ -335,6 +336,9 @@ class SelectRegions(object):
         #            print("Observed wavelength = {0:f}".format(self.atom._atom_wvl[self.linecur]*(1.0+self.prop._zem)))
         #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
         #            print("------------------------------------------------------------")
+        elif key == 'a':
+            # TODO :: Adjust the properties of the absorption line near the cursor.
+            pass
         elif key == 'b':
             self.goback()
         elif key == 'c':
