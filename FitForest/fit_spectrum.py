@@ -304,7 +304,7 @@ class SelectRegions(object):
             self.update_infobox(default=True)
             self._qconf = False
 
-        # Used keys include:  abcdfgiklmprquw?[]<>-#
+        # Used keys include:  abcdfgiklmprquwz?[]<>-#
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -317,7 +317,8 @@ class SelectRegions(object):
             print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
             # print("m       : Add a metal line to the cursor")
             print("d       : Delete the line nearest to the cursor")
-            print("a       : Adjust the column density and  bval of the line nearest to the cursor")
+            print("a       : Manually adjust the column density and  bval of the line nearest to the cursor")
+            print("z       : Manually adjust the redshift of the line nearest to the cursor")
             print("f       : Fit the current regions in all panels with ALIS")
             print("c       : Clear current fitting (start over)")
             print("m       : Merge current fitting into master model and master regions")
@@ -388,6 +389,9 @@ class SelectRegions(object):
         elif key == 'w':
             # TODO :: This needs to be updated
             self.write_data()
+        elif key == 'z':
+            # TODO :: Adjust the redshift of the line underneath the cursor
+            pass
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
             if autosave: self.autosave(']', axisID, mouseidx)
