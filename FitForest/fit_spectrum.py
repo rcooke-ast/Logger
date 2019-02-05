@@ -70,6 +70,8 @@ class SelectRegions(object):
         self.fitreg = [None for ii in range(self.naxis)]
         self.backgrounds = [None for ii in range(self.naxis)]
         self.mouseidx = 0   # Index of wavelength array where mouse is located
+        self.mmx = 0  # x position of mouse
+        self.mmy = 0  # y position of mouse
         self._addsub = 0    # Adding a region (1) or removing (0)
         self._start = 0     # Start of a region
         self._end = 0       # End of a region
@@ -85,12 +87,16 @@ class SelectRegions(object):
         # Create the model lines variables
         self.modelLines_act = [None for ii in range(self.naxis)]  # The Line instance of the plotted actors model
         self.modelLines_mst = [None for ii in range(self.naxis)]  # The Line instance of the plotted master model
-        self.lines_mst = AbsorptionLines()  # Stores all of the information about the master absorption lines.
+        self.modelLines_upd = [None for ii in range(self.naxis)]  # The Line instance of the plotted model that is being updated
         self.lines_act = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
+        self.lines_mst = AbsorptionLines()  # Stores all of the information about the master absorption lines.
+        self.lines_upd = AbsorptionLines()  # Stores all of the information about the updated absorption line.
         self.actors = [np.zeros(self.prop._wave.size) for ii in range(self.naxis)]
         self.lactor = np.zeros(self.prop._wave.size)  # Just the previously selected actor
         self.model_act = np.ones(self.prop._wave.size)
         self.model_mst = np.ones(self.prop._wave.size)
+        self.model_upd = np.ones(self.prop._wave.size)
+        self._update_model = None
 
         # Unset some of the matplotlib keymaps
         matplotlib.pyplot.rcParams['keymap.fullscreen'] = ''        # toggling fullscreen (Default: f, ctrl+f)
@@ -188,6 +194,34 @@ class SelectRegions(object):
             self.modelLines_act[i] = self.axs[i].plot(velo, self.model_act, 'r-', linewidth=1.0)
         return
 
+    def draw_model_update(self):
+        for i in range(self.naxis):
+            if self.modelLines_upd[i] is not None:
+                self.modelLines_upd[i].pop(0).remove()
+                self.modelLines_upd[i] = None
+        # Generate the model curve for the actors
+        self.model_upd = np.ones(self.prop._wave.size)
+        # If not currently updating, return
+        if self._update_model is None:
+            self.canvas.draw()
+            return
+        # Calculate the model
+        for i in range(self.lines_upd.size):
+            for j in range(self.naxis):
+                p0, p1, p2 = self.lines_upd.coldens[i], self.lines_upd.redshift[i], self.lines_upd.bval[i]
+                atidx = np.argmin(np.abs(self.lines[j] - self.atom._atom_wvl))
+                wv = self.lines[j]
+                fv = self.atom._atom_fvl[atidx]
+                gm = self.atom._atom_gam[atidx]
+                self.model_upd *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
+        # Plot the models
+        for i in range(self.naxis):
+            lam = self.lines[i] * (1.0 + self._zqso)
+            velo = 299792.458 * (self.prop._wave - lam) / lam
+            self.modelLines_upd[i] = self.axs[i].plot(velo, self.model_upd, 'g-', linewidth=1.0)
+        self.canvas.draw()
+        return
+
     def draw_callback(self, event):
         for i in range(self.naxis):
             trans = mtransforms.blended_transform_factory(self.axs[i].transData, self.axs[i].transAxes)
@@ -218,7 +252,23 @@ class SelectRegions(object):
         axisID = self.get_axisID(event)
         if axisID is not None:
             if axisID < self.naxis:
-                self.mouseidx = self.get_ind_under_point(axisID, event.xdata)
+                if self._update_model is not None:
+                    lidx, widx = self._update_model[1], self._update_model[2]
+                    mouseidx = self.get_ind_under_point(axisID, event.xdata)
+                    if self._update_model[0] == 'a':
+                        lam = self.lines[lidx] * (1.0 + self.lines_act.redshift[widx])
+                        newcold = self.lines_act.coldens[widx] + (self.mmy - event.ydata)
+                        newbval = max(1.0, abs(299792.458 * (self.prop._wave[mouseidx] - lam) / lam))
+                        newzabs = self.lines_act.redshift[widx]
+                    elif self._update_model[0] == 'z':
+                        newcold = self.lines_act.coldens[widx]
+                        newbval = self.lines_act.bval[widx]
+                        newzabs = self.prop._wave[mouseidx] / self.lines[lidx] - 1.0
+                    self.lines_upd.update_absline(0, coldens=newcold, bval=newbval, redshift=newzabs)
+                    self.draw_model_update()
+                else:
+                    self.mmx, self.mmy = event.xdata, event.ydata
+                    self.mouseidx = self.get_ind_under_point(axisID, event.xdata)
 
     def get_ind_under_point(self, axisID, xdata):
         """
@@ -338,8 +388,27 @@ class SelectRegions(object):
         #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
         #            print("------------------------------------------------------------")
         elif key == 'a':
-            # TODO :: Adjust the properties of the absorption line near the cursor.
-            pass
+            if self._update_model is None:
+                if self.lines_act.size == 0:
+                    return
+                cls = self.lines_act.find_closest(self.prop._wave[mouseidx], self.lines)
+                self.lines_upd.add_absline_inst(self.lines_act, cls[1])
+                self._update_model = ['a', cls[0], cls[1]]
+            elif self._update_model[0] == 'a':
+                # Update the model
+                params = [self._update_model[2], self.lines_upd.coldens[0], self.lines_upd.redshift[0],
+                          self.lines_upd.bval[0], self.lines_upd.label[0]]
+                self.update_absline(params=params)
+                if autosave: self.autosave('ul', axisID, mouseidx, params=params)
+                self.lines_upd.delete_absline_idx(0)
+                self._update_model = None
+                self.draw_model_update()
+            else:
+                # If any other key is pressed, ignore the update
+                if self.lines_upd.size != 0:
+                    self.lines_upd.delete_absline_idx(0)
+                self._update_model = None
+                self.draw_model_update()
         elif key == 'b':
             self.goback()
         elif key == 'c':
@@ -390,8 +459,15 @@ class SelectRegions(object):
             # TODO :: This needs to be updated
             self.write_data()
         elif key == 'z':
-            # TODO :: Adjust the redshift of the line underneath the cursor
-            pass
+            if self._update_model is None:
+                self._update_model = 'z'
+            elif self._update_model == 'z':
+                # Finished updating the model
+                # TODO :: Insert the updates here
+                self._update_model = None
+            else:
+                # TODO :: Delete any lines from the plot
+                self._update_model = None
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
             if autosave: self.autosave(']', axisID, mouseidx)
@@ -399,12 +475,14 @@ class SelectRegions(object):
             self.shift_waverange(shiftdir=-1)
             if autosave: self.autosave('[', axisID, mouseidx)
         elif key == '>':
-            pass
+            # TODO :: Add zooming functionality
         elif key == '<':
-            pass
+            # TODO :: Add zooming functionality
         elif key == 'ua':
             self.update_actors(axisID, locs=params)
             if autosave: self.autosave('ua', axisID, mouseidx, params=params)
+        elif key == 'ul':
+            self.update_absline(params=params)
 
     def autosave(self, kbID, axisID, mouseidx, params=None):
         """
@@ -526,6 +604,10 @@ class SelectRegions(object):
             self.draw_lines()
             self.draw_model()
         self.canvas.draw()
+
+    def update_absline(self, params=None):
+        self.lines_act.update_absline(params[0], coldens=params[1], redshift=params[2], bval=params[3], label=params[4])
+        return
 
     def delete_line(self, mouseidx):
         if self.lines_act.size == 0:
@@ -848,9 +930,7 @@ class AbsorptionLines:
         """
         west : The estimated wavelength of the line to be deleted
         """
-        amin = np.argmin(np.abs(np.outer(lines, 1 + self.redshift) - west))
-        idx = np.unravel_index(amin, (lines.size, self.redshift.size))
-        lidx, widx = int(idx[0]), int(idx[1])
+        lidx, widx = self.find_closest(west, lines)
         self.coldens = np.delete(self.coldens, (widx,), axis=0)
         self.redshift = np.delete(self.redshift, (widx,), axis=0)
         self.bval = np.delete(self.bval, (widx,), axis=0)
@@ -864,13 +944,23 @@ class AbsorptionLines:
         del self.label[idx]
         return
 
-    def lineinfo(self, west, lines):
+    def find_closest(self, west, lines):
         """
         west : The estimated wavelength of the line to be deleted
         """
         amin = np.argmin(np.abs(np.outer(lines, 1 + self.redshift) - west))
         idx = np.unravel_index(amin, (lines.size, self.redshift.size))
         lidx, widx = int(idx[0]), int(idx[1])
+        return lidx, widx
+
+    def getabs(self, idx):
+        return self.coldens[idx], self.redshift[idx], self.bval[idx], self.label[idx]
+
+    def lineinfo(self, west, lines):
+        """
+        west : The estimated wavelength of the line to be deleted
+        """
+        lidx, widx = self.find_closest(west, lines)
         print("=======================================================")
         print("Line Information:")
         print("  {0:s} {1:.2f}".format(self.label[widx], lines[lidx]))
@@ -879,6 +969,16 @@ class AbsorptionLines:
         print("  Dopp Par = {0:.2f}".format(self.bval[widx]))
         return
 
+    def update_absline(self, indx, coldens=None, redshift=None, bval=None, label=None):
+        if coldens is not None:
+            self.coldens[indx] = coldens
+        if bval is not None:
+            self.bval[indx] = bval
+        if redshift is not None:
+            self.redshift[indx] = redshift
+        if label is not None:
+            self.label[indx] = label
+        return
 
 class Atomic:
     def __init__(self, filename="/Users/rcooke/Software/ALIS_dataprep/atomic.dat", wmin=None, wmax=None):
