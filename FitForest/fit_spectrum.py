@@ -475,9 +475,9 @@ class SelectRegions(object):
             self.shift_waverange(shiftdir=-1)
             if autosave: self.autosave('[', axisID, mouseidx)
         elif key == '>':
-            # TODO :: Add zooming functionality
+            self.zoom_waverange(zoomdir=+1)
         elif key == '<':
-            # TODO :: Add zooming functionality
+            self.zoom_waverange(zoomdir=-1)
         elif key == 'ua':
             self.update_actors(axisID, locs=params)
             if autosave: self.autosave('ua', axisID, mouseidx, params=params)
@@ -677,8 +677,21 @@ class SelectRegions(object):
     def shift_waverange(self, shiftdir=-1):
         xmn, xmx = self.axs[0].get_xlim()
         ymn, ymx = self.axs[0].get_ylim()
-        shft = shiftdir*self.veld/3.0
+        shft = shiftdir * 0.5 * (xmx - xmn) / 3.0
         xmn += shft
+        xmx += shft
+        for i in range(len(self.lines)):
+            self.axs[i].set_xlim([xmn, xmx])
+            self.axs[i].set_ylim([ymn, ymx])
+        self.canvas.draw()
+
+    def zoom_waverange(self, zoomdir=-1):
+        xmn, xmx = self.axs[0].get_xlim()
+        ymn, ymx = self.axs[0].get_ylim()
+        shft = zoomdir * 0.5 * (xmx - xmn)
+        if zoomdir == -1:
+            shft *= 0.5
+        xmn -= shft
         xmx += shft
         for i in range(len(self.lines)):
             self.axs[i].set_xlim([xmn, xmx])
