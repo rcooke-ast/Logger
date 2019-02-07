@@ -28,24 +28,6 @@ def voigt(wave, p0, p1, p2, lam, fvl, gam):
     return np.exp(-1.0*tau)
 
 
-def modwrite(vals, wminmax):
-    outfile = open("outfile.mod", 'w')
-    outfile.write("# Change the default settings\n")
-    outfile.write("run ncpus -1\nrun nsubpix 5\nrun blind False\nrun convergence False\nrun convcriteria 0.2\n")
-    outfile.write("chisq atol 0.01\nchisq xtol 0.0\nchisq ftol 0.0\nchisq gtol 0.0\nchisq  miniter  10\nchisq  maxiter  3000\n")
-    outfile.write("out model True\nout fits True\nout verbose 1\nout overwrite True\nout covar datafile.mod.out.covar\n")
-    outfile.write("plot dims 3x3\nplot ticklabels True\nplot labels True\nplot fitregions True\nplot fits True\n\n")
-    outfile.write("# Read in the data\ndata read\n")
-    outfile.write("  datafile.dat  specid=0  fitrange=[{0:f},{1:f}]  resolution=vfwhm(6.28vh)  columns=[wave:0,flux:1,error:2]  plotone=True\ndata end\n\n".format(wminmax[0],wminmax[1]))
-    outfile.write("# Read in the model\nmodel read\n")
-    outfile.write(" fix vfwhm value True\n lim voigt bturb [0.2,None]\n lim voigt ColDens [8.0,22.0]\n")
-    outfile.write("emission\n # Specify the continuum\n constant 1.0  specid=0\nabsorption\n # Specify the absorption\n")
-    for i in range(vals.shape[0]):
-        outfile.write(" voigt ion=1H_I {0:f} {1:f} {2:f} 0.0ZEROT specid=0\n".format(vals[i,0],vals[i,1],vals[i,2]))
-    outfile.write("model end\n")
-    outfile.close()
-
-
 class SelectRegions(object):
     """
     Generate a model and regions to be fit with ALIS
@@ -857,20 +839,7 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def write_data(self):
-        """ MAY NOT BE NEEDED """
-        for i in range(self.naxis):
-            # Plot the lines
-            lam = self.lines[i]*(1.0+self.prop._zem)
-            velo = 299792.458*(self.prop._wave-lam)/lam
-            xmn, xmx = self.axs[i].get_xlim()
-            wsv = np.where((velo > xmn) & (velo < xmx))
-            idtxt = "H_I_{0:.1f}".format(self.lines[i])
-            outnm = self.prop._outp + "_" + idtxt + "_reg.dat"
-            np.savetxt(outnm, np.transpose((self.prop._wave[wsv], self.prop._flux[wsv]*self.prop._cont[wsv], self.prop._flue[wsv]*self.prop._cont[wsv], self.prop._regions[wsv])))
-            print("Saved file:")
-            print(outnm)
-        # Save the ALIS model file
-        modwrite(self.lines_act)
+        # TODO :: Send info away to AbsorptionLines to be saved as a file (see fit_alis for an example, and use basic=False).
         return
 
 
