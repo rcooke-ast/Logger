@@ -1,6 +1,6 @@
-import pdb
 import os
 import sys
+from shutil import rmtree
 import datetime
 import numpy as np
 import matplotlib
@@ -10,7 +10,9 @@ import matplotlib.transforms as mtransforms
 from quasars import QSO
 from scipy.optimize import curve_fit
 from scipy.special import wofz
+from alis.alis import alis
 matplotlib.use('Qt5Agg')
+
 
 def voigt(wave, p0, p1, p2, lam, fvl, gam):
     cold = 10.0**p0
@@ -24,6 +26,7 @@ def voigt(wave, p0, p1, p2, lam, fvl, gam):
     v=wv*ww*((1.0/ww)-(1.0/wv))/bl
     tau = cne*wofz(v + 1j * a).real
     return np.exp(-1.0*tau)
+
 
 def modwrite(vals, wminmax):
     outfile = open("outfile.mod", 'w')
@@ -413,10 +416,14 @@ class SelectRegions(object):
             self.delete_line(mouseidx)
             if autosave: self.autosave('d', axisID, mouseidx)
         elif key == 'f':
+            # TODO :: I think we can use y/n as a yes/no response to questions in the infobox.
+            # The infobox can in principle also be clicked, and that would send the result to operations.
+            # This has the advantage of being able to save a fit returned by ALIS.
             # TODO :: Add this functionality
             # Does "accept" in this case imply merge with master, or simply update the actors?
             # I think the latter. 'u' updates/merges to master
-            # TODO :: Do we need to add autosave here?
+            self.fit_alis()
+            # TODO :: Do we need to add autosave here? What do we do about accepting the fit or not?
             self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'g':
             self.goto(mouseidx)
@@ -433,7 +440,7 @@ class SelectRegions(object):
             if autosave:
                 self.autosave('m', axisID, mouseidx)
                 self.autosave_quick()
-        # Don't need to explicitly put p in there
+        # Don't need to explicitly put p in here
         elif key == 'q':
             if self.lines_act.size != 0:
                 self.update_infobox(message="WARNING: There are unsaved changes!!\nPress q again to exit", yesno=False)
@@ -571,11 +578,11 @@ class SelectRegions(object):
     def add_absline(self, axisID, mouseidx, kind=None):
         # Take the rest wavelength directly from the panel (unless kind is specified)
         wave0 = self.lines[axisID]
-        label = "H I"
+        label = "1H_I"
         if kind == 'lya':
             # Use H I Lyman alpha
             wave0 = 1215.6701
-            label = "H I"
+            label = "1H_I"
         elif kind == 'metal':
             # TODO: Include metal line fitting as an option
             # An example metal line
@@ -601,6 +608,63 @@ class SelectRegions(object):
         self.draw_lines()
         self.draw_model()
         self.canvas.draw()
+
+    def fit_alis(self, nextra=50):
+        # First store the data that will be needed in the analysis
+        lines = []
+        for axisID in range(self.naxis):
+            # Find all regions
+            regwhr = np.copy(self.actors[axisID] == 1)
+            # Fudge to get the leftmost pixel shaded in too
+            lpix = np.where((self.actors[axisID][:-1] == 0) & (self.actors[axisID][1:] == 1))
+            regwhr[lpix] = True
+            if np.sum(regwhr != 0):
+                # Store this as a line that needs to be included in the fit
+                lines += [axisID]
+                # Find the endpoints
+                rpixend = np.max(np.where((self.actors[axisID][:-1] == 1) & (self.actors[axisID][1:] == 0))[0])
+                lpixend = np.min(lpix[0])
+                # Extra the data to be fitted
+                wave = self.prop._wave[lpixend - nextra - 1:rpixend + nextra]
+                flux = self.prop._flux[lpixend - nextra - 1:rpixend + nextra]
+                flue = self.prop._flue[lpixend - nextra - 1:rpixend + nextra]
+                # Extra the regions of the data to be fitted
+                fitr = np.zeros(self.prop._wave.size)
+                fitr[np.where(regwhr)] = 1
+                fito = fitr[lpixend - nextra - 1:rpixend + nextra]
+                # Get the continuum
+                cont = self.model_mst[lpixend - nextra - 1:rpixend + nextra]
+                # Save the temporary data
+                if not os.path.exists("tempdata"):
+                    os.mkdir("tempdata")
+                np.savetxt("tempdata/data_{0:02d}.dat".format(axisID), np.transpose((wave, flux, flue, fito, cont)))
+        # Make sure there are data to be fit!
+        if len(lines) == 0:
+            return
+        # Get the ALIS parameter, data, and model lines
+        parlines = self.lines_act.alis_parlines(name=self.prop._qsoname)
+        datlines = self.lines_act.alis_datlines(lines)
+        modlines = self.lines_act.alis_modlines(lines)
+        # Some testing to check the ALIS file is being constructed correctly
+        if False:
+            fil = open("testfile.mod", 'w')
+            fil.write("\n".join(parlines) + "\n\n")
+            fil.write("data read\n" + "\n".join(datlines) + "\ndata end\n\n")
+            fil.write("model read\n" + "\n".join(modlines) + "\nmodel end\n")
+            fil.close()
+        # Run the fit with ALIS
+        result = alis(parlines=parlines, datlines=datlines, modlines=modlines)
+        result._fitresults #= m
+        result._fitparams #= m.params
+        # Extract parameter values and continuum
+
+        # Plot best-fitting model and residuals
+
+        # If the user is happy with the fit, update the actors with the new model parameters
+
+        # Clean up (delete the data used in the fitting)
+        rmtree("tempdata")
+        return
 
     def fit_oneline(self, wave0, mouseidx):
         """ This performs a very quick fit to the line (using only one actor) """
@@ -866,24 +930,35 @@ class AbsorptionLines:
     def size(self):
         return self.coldens.size
 
-    def alis_datlines(self):
+    def alis_datlines(self, lines, res=7.0):
+        """
+        lines = list of integers indicating which lines are used in the fitting.
+        res = instrument resolution in km/s
+        """
         datlines = []
-        datlines += ["../data/J0814p5029_HIRES_H_I_1215.7_reg.dat    specid=Lya  fitrange=columns  loadrange=all  resolution=vfwhm(6.280vh)  columns=[wave:0,flux:1,error:2,fitrange:3,continuum:4]  plotone=False  label=HIRES"]
+        for line in lines:
+            if line == 0:
+                shtxt = "0.0SFIX"
+            else:
+                shtxt = "0.0"
+            datlines += ["tempdata/data_{0:02d}.dat  specid=line{0:02d}  fitrange=columns  loadrange=all  resolution=vfwhm({1:.3f}RFIX) shift=vshift({2:s}) columns=[wave:0,flux:1,error:2,fitrange:3,continuum:4]".format(line, res, shtxt)]
         return datlines
 
-    def alis_modlines(self):
+    def alis_modlines(self, lines):
         modlines = []
         # Do the emission
         modlines += ["emission"]
-        modlines += ["legendre  1.0  0.0  0.0  0.0  0.0  scale=1.0,1.0,1.0,1.0,1.0  specid=Lya"]
+        for axID in lines:
+            modlines += ["legendre  1.0 0.0 0.0 0.0  scale=1.0,1.0,1.0,1.0  specid=line{0:02d}".format(axID)]
         # Do the absorption
         modlines += ["absorption"]
         for ll in range(self.size):
-            modlines += ["voigt ion={0:s}  {1:.4f}  {2:.9f}  {3:.3f}  0.0TZERO  blind=False  specid=Lya".format(
-                self.label[ll], self.coldens[0], self.redshift[0], self.bval[0])]
+            for axID in lines:
+                modlines += ["voigt ion={0:s}  {1:.4f}n{4:d}  {2:.9f}z{4:d}  {3:.3f}b{4:d}  0.0TFIX  specid=line{5:02d}".format(
+                    self.label[ll], self.coldens[ll], self.redshift[ll], self.bval[ll], ll, axID)]
         return modlines
 
-    def alis_parlines(self, name="quasarname"):
+    def alis_parlines(self, name="quasarname", basic=True):
         parlines = []
         parlines += ["run  ncpus  6"]
         parlines += ["run ngpus 0"]
@@ -891,26 +966,32 @@ class AbsorptionLines:
         parlines += ["run blind False"]
         parlines += ["run convergence False"]
         parlines += ["run convcriteria 0.2"]
-        parlines += ["chisq atol 0.01"]
+        parlines += ["chisq atol 0.001"]
         parlines += ["chisq xtol 0.0"]
         parlines += ["chisq ftol 0.0"]
         parlines += ["chisq gtol 0.0"]
         parlines += ["chisq fstep 1.3"]
         parlines += ["chisq miniter 10"]
-        parlines += ["chisq maxiter 3000"]
-        parlines += ["out model True"]
-        parlines += ["out covar {0:s}.mod.out.covar".format(name)]
-        parlines += ["out fits True"]
-        parlines += ["out verbose 1"]
+        parlines += ["chisq maxiter 1000"]
+        if basic:
+            parlines += ["out model False"]
+            parlines += ["out fits False"]
+            parlines += ["out verbose 0"]
+        else:
+            parlines += ["out model True"]
+            parlines += ["out covar {0:s}.mod.out.covar".format(name)]
+            parlines += ["out fits True"]
+            parlines += ["out verbose 1"]
+            parlines += ["out plots {0:s}_fits.pdf".format(name)]
         parlines += ["out overwrite True"]
-        parlines += ["out plots {0:s}_fits.pdf".format(name)]
-        parlines += ["#plot only True"]
-        parlines += ["plot dims 3x1"]
-        parlines += ["plot ticklabels True"]
-        parlines += ["plot labels True"]
-        parlines += ["plot fitregions True"]
-        parlines += ["plot fits True"]
-        parlines += ["#plot pages 1"]
+        if basic:
+            parlines += ["plot fits False"]
+        else:
+            parlines += ["plot dims 3x1"]
+            parlines += ["plot ticklabels True"]
+            parlines += ["plot labels True"]
+            parlines += ["plot fitregions True"]
+            parlines += ["plot fits True"]
         return parlines
 
     def add_absline(self, coldens, redshift, bval, label):
