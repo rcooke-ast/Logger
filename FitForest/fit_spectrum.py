@@ -382,19 +382,14 @@ class SelectRegions(object):
             print("i       : Obtain information on the line closest to the cursor")
             print("r       : toggle residuals plotting (i.e. remove master model from data)")
             print("------------------------------------------------------------")
-        #            print("       ATOMIC DATA OF THE CURRENT LINE")
-        #            print("{0:s} {1:s}  {2:f}".format(self.atom._atom_atm[self.linecur].strip(),self.atom._atom_ion[self.linecur].strip(),self.atom._atom_wvl[self.linecur]))
-        #            print("Observed wavelength = {0:f}".format(self.atom._atom_wvl[self.linecur]*(1.0+self.prop._zem)))
-        #            print("f-value = {0:f}".format(self.atom._atom_fvl[self.linecur]))
-        #            print("------------------------------------------------------------")
-        elif key == 'a':
+        elif key == 'a' or key == 'z':
             if self._update_model is None:
                 if self.lines_act.size == 0:
                     return
                 cls = self.lines_act.find_closest(self.prop._wave[mouseidx], self.lines)
                 self.lines_upd.add_absline_inst(self.lines_act, cls[1])
-                self._update_model = ['a', cls[0], cls[1]]
-            elif self._update_model[0] == 'a':
+                self._update_model = [key, cls[0], cls[1]]
+            elif self._update_model[0] == key:
                 # Update the model
                 params = [self._update_model[2], self.lines_upd.coldens[0], self.lines_upd.redshift[0],
                           self.lines_upd.bval[0], self.lines_upd.label[0]]
@@ -458,16 +453,6 @@ class SelectRegions(object):
         elif key == 'w':
             # TODO :: This needs to be updated
             self.write_data()
-        elif key == 'z':
-            if self._update_model is None:
-                self._update_model = 'z'
-            elif self._update_model == 'z':
-                # Finished updating the model
-                # TODO :: Insert the updates here
-                self._update_model = None
-            else:
-                # TODO :: Delete any lines from the plot
-                self._update_model = None
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
             if autosave: self.autosave(']', axisID, mouseidx)
