@@ -417,14 +417,7 @@ class SelectRegions(object):
             self.delete_line(mouseidx)
             if autosave: self.autosave('d', axisID, mouseidx)
         elif key == 'f':
-            # TODO :: I think we can use y/n as a yes/no response to questions in the infobox.
-            # The infobox can in principle also be clicked, and that would send the result to operations.
-            # This has the advantage of being able to save a fit returned by ALIS.
-            # TODO :: Add this functionality
-            # Does "accept" in this case imply merge with master, or simply update the actors?
-            # I think the latter. 'u' updates/merges to master
             self.fit_alis()
-            # TODO :: Do we need to add autosave here? What do we do about accepting the fit or not?
             self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'g':
             self.goto(mouseidx)
@@ -459,7 +452,6 @@ class SelectRegions(object):
             # TODO :: undo previous operation -- maybe pickle and unpickle a quickload/quicksave?
             pass
         elif key == 'w':
-            # TODO :: This needs to be updated
             self.write_data()
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
@@ -668,11 +660,11 @@ class SelectRegions(object):
 
     def merge_alis(self, resp):
         # If the user is happy with the ALIS fit, update the actors with the new model parameters
+        # TODO :: complete the two options (y or n) here
         if resp == "y":
             pass
         else:
             pass
-
 
     def fit_oneline(self, wave0, mouseidx):
         """ This performs a very quick fit to the line (using only one actor) """
@@ -865,7 +857,7 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def write_data(self):
-        # TODO :: Send info away to AbsorptionLines to be saved as a file (see fit_alis for an example, and use basic=False).
+        self.lines_mst.write_data()
         return
 
 
@@ -915,9 +907,16 @@ class Props:
 
 class AbsorptionLines:
     def __init__(self):
+        # Values
         self.coldens = np.array([])
         self.redshift = np.array([])
         self.bval = np.array([])
+        # Errors
+        # TODO :: Need to store the errors as well!! Update all functions accordingly.
+        self.err_coldens = np.array([])
+        self.err_redshift = np.array([])
+        self.err_bval = np.array([])
+        # A label
         self.label = []
         return
 
@@ -1053,6 +1052,21 @@ class AbsorptionLines:
         if label is not None:
             self.label[indx] = label
         return
+    def write_data(self):
+        # TODO :: Save the master absorption line infomation
+        # The information that should be saved includes:
+        # A header that lists the properties of the spectrum used in the analysis
+        #  - QSO name
+        #  - OBS date/time
+        #  - spectral resolution
+        #  - Maybe include the entire header from the original fits file?
+        # Then, the table data will include:
+        #  - Approximate central wavelength of the line
+        #  - Line ID (i.e. H I Lya, H I Lyb, metal)
+        #  - Column density and error
+        #  - Bval and error
+        #  - Redshift and error
+
 
 class Atomic:
     def __init__(self, filename="/Users/rcooke/Software/ALIS_dataprep/atomic.dat", wmin=None, wmax=None):
