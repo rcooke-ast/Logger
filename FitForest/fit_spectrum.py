@@ -432,6 +432,7 @@ class SelectRegions(object):
             self._respreq = [True, "fit_alis"]
             self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'g':
+            # TODO :: Maybe add 1-8 as possible keywords, corresponding to a goto for Ly1-Ly8?
             self.goto(mouseidx)
         elif key == 'i':
             self.lineinfo(mouseidx)
@@ -711,7 +712,13 @@ class SelectRegions(object):
                             elif cntr == 1:
                                 vshift_err += [float(vspl.split("s")[0])]
                                 break
-        #
+        # Extract absorption line parameters and their errors
+
+        # TODO :: Update how the master absorption lines are stored.
+        # We either need to append directly to file here all of the results from the ALIS fitting (not ideal,
+        # because the master model won't be plotted correctly), or we need to change how master absorption lines
+        # are stored. In the latter case, we will need to individually store Lya, Lyb etc. from the same system.
+
         # Plot best-fitting model and residuals (send to lines_upd)
 
         # Clean up (delete the data used in the fitting)
