@@ -62,6 +62,7 @@ class SelectRegions(object):
         self._end = 0       # End of a region
         self._resid = False  # Are the residuals currently being plotted?
         self._qconf = False  # Confirm quit message
+        self._respreq = [False, None]  # Does the user need to provide a response before any other operation will be permitted? Once the user responds, the second element of this array provides the action to be performed.
         self.annlines = []
         self.anntexts = []
 
@@ -298,11 +299,16 @@ class SelectRegions(object):
             return
         if event.inaxes == self.axi:
             # TODO :: What do we do with this response? How do we add this response to autosave?
+            answer = ""
             if event.xdata > 0.8 and event.xdata < 0.9:
-                answer = "yes"
+                answer = "y"
             elif event.xdata >= 0.9:
-                answer = "no"
+                answer = "n"
+            self.operations(answer, -1, -1)
             self.update_infobox(default=True)
+            return
+        elif self._respreq[0]:
+            # The user is trying to do something before they have responded to a question
             return
         if self.canvas.toolbar.mode != "":
             return
@@ -339,7 +345,20 @@ class SelectRegions(object):
             self.update_infobox(default=True)
             self._qconf = False
 
-        # Used keys include:  abcdfgiklmprquwz?[]<>-#
+        # Manage responses from questions posed to the user.
+        if self._respreq[0]:
+            if key != "y" and key != "n":
+                return
+            else:
+                if self._respreq[1] == "fit_alis":
+                    self.merge_alis(key)
+                    if autosave: self.autosave(key, axisID, mouseidx)
+                else:
+                    return
+                # Switch off the required response
+                self._respreq[0] = False
+
+        # Used keys include:  abcdfgiklmnprquwyz?[]<>-#
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -628,7 +647,8 @@ class SelectRegions(object):
         datlines = self.lines_act.alis_datlines(lines)
         modlines = self.lines_act.alis_modlines(lines)
         # Some testing to check the ALIS file is being constructed correctly
-        if False:
+        writefile = False
+        if writefile:
             fil = open("testfile.mod", 'w')
             fil.write("\n".join(parlines) + "\n\n")
             fil.write("data read\n" + "\n".join(datlines) + "\ndata end\n\n")
@@ -642,11 +662,17 @@ class SelectRegions(object):
 
         # Plot best-fitting model and residuals
 
-        # If the user is happy with the fit, update the actors with the new model parameters
-
         # Clean up (delete the data used in the fitting)
         rmtree("tempdata")
         return
+
+    def merge_alis(self, resp):
+        # If the user is happy with the ALIS fit, update the actors with the new model parameters
+        if resp == "y":
+            pass
+        else:
+            pass
+
 
     def fit_oneline(self, wave0, mouseidx):
         """ This performs a very quick fit to the line (using only one actor) """
