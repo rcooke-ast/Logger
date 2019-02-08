@@ -62,6 +62,7 @@ class SelectRegions(object):
         self._end = 0       # End of a region
         self._resid = False  # Are the residuals currently being plotted?
         self._qconf = False  # Confirm quit message
+        self._fitchng = True  # Check that a fit with ALIS has been performed before merging to master
         self._respreq = [False, None]  # Does the user need to provide a response before any other operation will be permitted? Once the user responds, the second element of this array provides the action to be performed.
         self.annlines = []
         self.anntexts = []
@@ -112,6 +113,8 @@ class SelectRegions(object):
         # to save the properties of this execution of the code
         self.autoload()
         # Draw the canvas
+        self.draw_lines()
+        self.draw_model()
         self.canvas.draw()
 
     def draw_lines(self):
@@ -224,10 +227,6 @@ class SelectRegions(object):
             self.axs[i].draw_artist(self.specs[i])
         for i in range(self.naxis):
             self.axs[i].set_yscale("linear")
-        self.draw_lines()
-        self.draw_model()
-        # TODO :: Need to stop calculating the model so frequently
-        print("drawing from callback!")
 
     def mouse_move_callback(self, event):
         """
@@ -298,7 +297,6 @@ class SelectRegions(object):
         if event.inaxes is None:
             return
         if event.inaxes == self.axi:
-            # TODO :: What do we do with this response? How do we add this response to autosave?
             answer = ""
             if event.xdata > 0.8 and event.xdata < 0.9:
                 answer = "y"
@@ -353,12 +351,20 @@ class SelectRegions(object):
                 if self._respreq[1] == "fit_alis":
                     self.merge_alis(key)
                     if autosave: self.autosave(key, axisID, mouseidx)
+                elif self._respreq[1] == "mst_merge":
+                    if key == "y":
+                        self.update_master()
+                        self._fitchng = True
+                    if autosave: self.autosave(key, axisID, mouseidx)
                 else:
                     return
                 # Switch off the required response
                 self._respreq[0] = False
+            # Reset the info box
+            self.update_infobox(default=True)
+            return
 
-        # Used keys include:  abcdfgiklmnprquwyz?[]<>-#
+        # Used keys include:  abcdfgiklmnoprquwyz?[]<>-#
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -369,7 +375,7 @@ class SelectRegions(object):
             print("       FITTING COMMANDS")
             print("k       : Add a line at the specified location (line ID will depend on panel)")
             print("l       : Add a Lya line at the specified location (line ID will always be Lya - regardless of panel)")
-            # print("m       : Add a metal line to the cursor")
+            print("o       : Add a metal (assumed to be 'aluminium') line at the specified location")
             print("d       : Delete the line nearest to the cursor")
             print("a       : Manually adjust the column density and  bval of the line nearest to the cursor")
             print("z       : Manually adjust the redshift of the line nearest to the cursor")
@@ -396,9 +402,9 @@ class SelectRegions(object):
             elif self._update_model[0] == key:
                 # Update the model
                 params = [self._update_model[2], self.lines_upd.coldens[0], self.lines_upd.redshift[0],
-                          self.lines_upd.bval[0], self.lines_upd.label[0]]
-                self.update_absline(params=params)
-                if autosave: self.autosave('ul', axisID, mouseidx, params=params)
+                          self.lines_upd.bval[0], self.lines_upd.label[0], None]
+                # Update the absorption line
+                self.operations('ul', axisID, mouseidx, params=params)
                 self.lines_upd.delete_absline_idx(0)
                 self._update_model = None
                 self.draw_model_update()
@@ -408,16 +414,20 @@ class SelectRegions(object):
                     self.lines_upd.delete_absline_idx(0)
                 self._update_model = None
                 self.draw_model_update()
+            self._fitchng = True
         elif key == 'b':
             self.goback()
         elif key == 'c':
             self.update_actors(axisID, clear=True)
             if autosave: self.autosave('c', axisID, mouseidx)
+            self._fitchng = True
         elif key == 'd':
             self.delete_line(mouseidx)
             if autosave: self.autosave('d', axisID, mouseidx)
+            self._fitchng = True
         elif key == 'f':
             self.fit_alis()
+            self._respreq = [True, "fit_alis"]
             self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'g':
             self.goto(mouseidx)
@@ -426,16 +436,24 @@ class SelectRegions(object):
         elif key == 'k':
             self.add_absline(axisID, mouseidx)
             if autosave: self.autosave('k', axisID, mouseidx)
+            self._fitchng = True
         elif key == 'l':
             self.add_absline(axisID, mouseidx, kind='lya')
             if autosave: self.autosave('l', axisID, mouseidx)
+            self._fitchng = True
         elif key == 'm':
-            # TODO :: Before merging, we should check that the actors and lines_act have not changed since they were last fit by ALIS.
-            # In other words, the content merged to master should have been *just* fit with ALIS, and no other operations are allowed.
-            self.update_master()
+            if self._fitchng:
+                self.update_infobox(message="You must fit the actors with ALIS before merging!", yesno=False)
+            else:
+                self._respreq = [True, "mst_merge"]
+                self.update_infobox(message="Confirm merge to master", yesno=True)
             if autosave:
                 self.autosave('m', axisID, mouseidx)
                 self.autosave_quick()
+        elif key == 'o':
+            self.add_absline(axisID, mouseidx, kind='metal')
+            if autosave: self.autosave('l', axisID, mouseidx)
+            self._fitchng = True
         # Don't need to explicitly put p in here
         elif key == 'q':
             if self.lines_act.size != 0:
@@ -467,9 +485,12 @@ class SelectRegions(object):
             self.zoom_waverange(zoomdir=-1)
         elif key == 'ua':
             self.update_actors(axisID, locs=params)
+            self._fitchng = True
             if autosave: self.autosave('ua', axisID, mouseidx, params=params)
         elif key == 'ul':
             self.update_absline(params=params)
+            if autosave: self.autosave('ul', axisID, mouseidx, params=params)
+            self._fitchng = True
 
     def autosave(self, kbID, axisID, mouseidx, params=None):
         """
@@ -579,10 +600,9 @@ class SelectRegions(object):
             wave0 = 1215.6701
             label = "1H_I"
         elif kind == 'metal':
-            # TODO: Include metal line fitting as an option
             # An example metal line
-            wave0 = 0.0
-            label = "METAL"
+            wave0 = 1670.78861
+            label = "27Al_II"
         # Get a quick fit to estimate some parameters
         fitvals = self.fit_oneline(wave0, mouseidx)
         if fitvals is not None:
@@ -593,7 +613,8 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def update_absline(self, params=None):
-        self.lines_act.update_absline(params[0], coldens=params[1], redshift=params[2], bval=params[3], label=params[4])
+        self.lines_act.update_absline(params[0], coldens=params[1], redshift=params[2], bval=params[3],
+                                      label=params[4], errs=params[5])
         return
 
     def delete_line(self, mouseidx):
@@ -650,11 +671,13 @@ class SelectRegions(object):
             fil.close()
         # Run the fit with ALIS
         result = alis(parlines=parlines, datlines=datlines, modlines=modlines)
+        # TODO :: Store the parameter values and errors... somehow!
         result._fitresults #= m
         result._fitparams #= m.params
         # Extract parameter values and continuum
+        self.lines_upd.clear()
 
-        # Plot best-fitting model and residuals
+        # Plot best-fitting model and residuals (send to lines_upd)
 
         # Clean up (delete the data used in the fitting)
         rmtree("tempdata")
@@ -664,8 +687,13 @@ class SelectRegions(object):
         # If the user is happy with the ALIS fit, update the actors with the new model parameters
         # TODO :: complete the two options (y or n) here
         if resp == "y":
-            pass
+            for ll in range(self.lines_upd.size):
+                errs = [err_coldens, err_redshift, err_bval]
+                params = [INDEX, coldens, redshift, bval, label, errs=errs]
+                self.operations('ul', -1, -1, params=params)
+            self._fitchng = False
         else:
+            self.lines_upd.clear()
             pass
 
     def fit_oneline(self, wave0, mouseidx):
@@ -750,7 +778,7 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def lineinfo(self, mouseidx):
-        self.lines_act.lineinfo(self.prop._wave[mouseidx], self.lines)
+        self.lines_act.lineinfo(self.prop._wave[mouseidx], np.append(self.lines, 1670.78861))
 
     def toggle_residuals(self, resid):
         for i in range(self.naxis):
@@ -909,18 +937,7 @@ class Props:
 
 class AbsorptionLines:
     def __init__(self):
-        # Values
-        self.coldens = np.array([])
-        self.redshift = np.array([])
-        self.bval = np.array([])
-        # Errors
-        # TODO :: Need to store the errors as well!! Update all functions accordingly.
-        self.err_coldens = np.array([])
-        self.err_redshift = np.array([])
-        self.err_bval = np.array([])
-        # TODO :: Should we include an ID number, or maybe just set the ID# to be the index of the array?
-        # A label
-        self.label = []
+        self.clear()
         return
 
     @property
@@ -992,9 +1009,15 @@ class AbsorptionLines:
         return parlines
 
     def add_absline(self, coldens, redshift, bval, label):
+        # Add the values
         self.coldens = np.append(self.coldens, coldens)
         self.redshift = np.append(self.redshift, redshift)
         self.bval = np.append(self.bval, bval)
+        # Add the errors
+        self.err_coldens = np.append(self.err_coldens, coldens)
+        self.err_redshift = np.append(self.err_redshift, redshift)
+        self.err_bval = np.append(self.err_bval, bval)
+        # Append the label
         self.label += [label]
         return
 
@@ -1002,21 +1025,50 @@ class AbsorptionLines:
         self.add_absline(inst.coldens[idx], inst.redshift[idx], inst.bval[idx], inst.label[idx])
         return
 
+    def clear(self):
+        """
+        Delete all absorption lines - start from scratch
+        """
+        # Values
+        self.coldens = np.array([])
+        self.redshift = np.array([])
+        self.bval = np.array([])
+        # Errors
+        self.err_coldens = np.array([])
+        self.err_redshift = np.array([])
+        self.err_bval = np.array([])
+        # A label
+        self.label = []
+        return
+
     def delete_absline(self, west, lines):
         """
         west : The estimated wavelength of the line to be deleted
         """
+        # Find the line to be deleted
         lidx, widx = self.find_closest(west, lines)
+        # Delete the values
         self.coldens = np.delete(self.coldens, (widx,), axis=0)
         self.redshift = np.delete(self.redshift, (widx,), axis=0)
         self.bval = np.delete(self.bval, (widx,), axis=0)
+        # Delete the errors
+        self.err_coldens = np.delete(self.err_coldens, (widx,), axis=0)
+        self.err_redshift = np.delete(self.err_redshift, (widx,), axis=0)
+        self.err_bval = np.delete(self.err_bval, (widx,), axis=0)
+        # Delete the label
         del self.label[widx]
         return
 
     def delete_absline_idx(self, idx):
+        # Delete the values
         self.coldens = np.delete(self.coldens, (idx,), axis=0)
         self.redshift = np.delete(self.redshift, (idx,), axis=0)
         self.bval = np.delete(self.bval, (idx,), axis=0)
+        # Delete the errors
+        self.err_coldens = np.delete(self.err_coldens, (idx,), axis=0)
+        self.err_redshift = np.delete(self.err_redshift, (idx,), axis=0)
+        self.err_bval = np.delete(self.err_bval, (idx,), axis=0)
+        # Delete the label
         del self.label[idx]
         return
 
@@ -1029,8 +1081,13 @@ class AbsorptionLines:
         lidx, widx = int(idx[0]), int(idx[1])
         return lidx, widx
 
-    def getabs(self, idx):
-        return self.coldens[idx], self.redshift[idx], self.bval[idx], self.label[idx]
+    def getabs(self, idx, errs=False):
+        if errs:
+            return self.coldens[idx], self.redshift[idx], self.bval[idx],\
+                   self.err_coldens[idx], self.err_redshift[idx], self.err_bval[idx],\
+                   self.label[idx]
+        else:
+            return self.coldens[idx], self.redshift[idx], self.bval[idx], self.label[idx]
 
     def lineinfo(self, west, lines):
         """
@@ -1040,21 +1097,28 @@ class AbsorptionLines:
         print("=======================================================")
         print("Line Information:")
         print("  {0:s} {1:.2f}".format(self.label[widx], lines[lidx]))
-        print("  Col Dens = {0:.3f}".format(self.coldens[widx]))
-        print("  Redshift = {0:.6f}".format(self.redshift[widx]))
-        print("  Dopp Par = {0:.2f}".format(self.bval[widx]))
+        print("  Col Dens = {0:.3f} +/- {1:.3f}".format(self.coldens[widx], self.err_coldens[widx]))
+        print("  Redshift = {0:.6f} +/- {1:.6f}".format(self.redshift[widx], self.err_redshift[widx]))
+        print("  Dopp Par = {0:.2f} +/- {1:.2f}".format(self.bval[widx], self.err_bval[widx]))
         return
 
-    def update_absline(self, indx, coldens=None, redshift=None, bval=None, label=None):
+    def update_absline(self, indx, coldens=None, redshift=None, bval=None, errs=None, label=None):
         if coldens is not None:
             self.coldens[indx] = coldens
-        if bval is not None:
-            self.bval[indx] = bval
+            if errs is not None:
+                self.err_coldens[indx] = errs[0]
         if redshift is not None:
             self.redshift[indx] = redshift
+            if errs is not None:
+                self.err_redshift[indx] = errs[1]
+        if bval is not None:
+            self.bval[indx] = bval
+            if errs is not None:
+                self.err_bval[indx] = errs[2]
         if label is not None:
             self.label[indx] = label
         return
+
     def write_data(self):
         # TODO :: Save the master absorption line infomation
         # The information that should be saved includes:
@@ -1070,6 +1134,7 @@ class AbsorptionLines:
         #  - Column density and error
         #  - Bval and error
         #  - Redshift and error
+        pass
 
 
 class Atomic:
