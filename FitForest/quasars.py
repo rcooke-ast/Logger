@@ -18,4 +18,5 @@ class QSO:
         self._zem = 2.7348
         self._path += "HS1700p6416/"
         self._filename = "HS1700p6416_1p7241_HIRES_C1.dat"
+        self._vFWHM = 6.246
 
