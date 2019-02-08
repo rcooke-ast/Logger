@@ -430,6 +430,8 @@ class SelectRegions(object):
             self.add_absline(axisID, mouseidx, kind='lya')
             if autosave: self.autosave('l', axisID, mouseidx)
         elif key == 'm':
+            # TODO :: Before merging, we should check that the actors and lines_act have not changed since they were last fit by ALIS.
+            # In other words, the content merged to master should have been *just* fit with ALIS, and no other operations are allowed.
             self.update_master()
             if autosave:
                 self.autosave('m', axisID, mouseidx)
@@ -916,6 +918,7 @@ class AbsorptionLines:
         self.err_coldens = np.array([])
         self.err_redshift = np.array([])
         self.err_bval = np.array([])
+        # TODO :: Should we include an ID number, or maybe just set the ID# to be the index of the array?
         # A label
         self.label = []
         return
@@ -1061,6 +1064,7 @@ class AbsorptionLines:
         #  - spectral resolution
         #  - Maybe include the entire header from the original fits file?
         # Then, the table data will include:
+        #  - Line ID number?
         #  - Approximate central wavelength of the line
         #  - Line ID (i.e. H I Lya, H I Lyb, metal)
         #  - Column density and error
