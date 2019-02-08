@@ -11,6 +11,7 @@ from quasars import QSO
 from scipy.optimize import curve_fit
 from scipy.special import wofz
 from alis.alis import alis
+from alis.alsave import save_model as get_alis_string
 matplotlib.use('Qt5Agg')
 
 
@@ -166,6 +167,7 @@ class SelectRegions(object):
             if i is not None:
                 i.pop(0).remove()
         # Generate the model curve for the actors
+        # TODO :: Need to deal with instrument line spread function, somewhere...
         self.model_act = np.ones(self.prop._wave.size)
         for i in range(self.lines_act.size):
             for j in range(self.naxis):
@@ -654,6 +656,9 @@ class SelectRegions(object):
                 if not os.path.exists("tempdata"):
                     os.mkdir("tempdata")
                 np.savetxt("tempdata/data_{0:02d}.dat".format(axisID), np.transpose((wave, flux, flue, fito, cont)))
+            elif axisID == 0:
+                self.update_infobox("You must include fitting data in the top left (i.e. Lya) panel", yesno=False)
+                return
         # Make sure there are data to be fit!
         if len(lines) == 0:
             return
@@ -671,12 +676,42 @@ class SelectRegions(object):
             fil.close()
         # Run the fit with ALIS
         result = alis(parlines=parlines, datlines=datlines, modlines=modlines)
-        # TODO :: Store the parameter values and errors... somehow!
-        result._fitresults #= m
-        result._fitparams #= m.params
-        # Extract parameter values and continuum
-        self.lines_upd.clear()
+        # Convert the results into an easy read format
+        fres = result._fitresults
+        info = [(result._tend - result._tstart)/3600.0, fres.fnorm, fres.dof, fres.niter, fres.status]
+        alis_lines = get_alis_string(result, fres.params, fres.perror, info,
+                                     printout=False, getlines=True, save=False)
+        #print(alis_lines)
+        #print(result._contfinal)
 
+        # Extract parameter values and continuum
+        self.lines_upd.clear()   # Start by clearing the update lines, just in case.
+        # Scan through the model to find the velocity shifts of each portion of spectrum
+        vshift, vshift_err = [], []
+        flag = False
+        for ll in range(len(lines)):
+            if lines[ll] == 0:
+                vshift += [0.0]
+                vshift_err += [0.0]
+            else:
+                shtxt = "0.0shift{0:02d}".format(lines[ll])
+                # Search through alis_lines for the appropriate string
+                alspl = alis_lines.split("\n")
+                for spl in range(len(alspl)):
+                    if "# Shift Models:" in alspl[spl]:
+                        flag = True
+                        continue
+                    if flag:
+                        cntr = 0
+                        if shtxt in alspl[spl]:
+                            vspl = alspl[spl].split()[2]
+                            if cntr == 0:
+                                vshift += [float(vspl.split("s")[0])]
+                                cntr += 1
+                            elif cntr == 1:
+                                vshift_err += [float(vspl.split("s")[0])]
+                                break
+        #
         # Plot best-fitting model and residuals (send to lines_upd)
 
         # Clean up (delete the data used in the fitting)
@@ -687,10 +722,10 @@ class SelectRegions(object):
         # If the user is happy with the ALIS fit, update the actors with the new model parameters
         # TODO :: complete the two options (y or n) here
         if resp == "y":
-            for ll in range(self.lines_upd.size):
-                errs = [err_coldens, err_redshift, err_bval]
-                params = [INDEX, coldens, redshift, bval, label, errs=errs]
-                self.operations('ul', -1, -1, params=params)
+#            for ll in range(self.lines_upd.size):
+#                errs = [err_coldens, err_redshift, err_bval]
+#                params = [INDEX, coldens, redshift, bval, label, errs=errs]
+#                self.operations('ul', -1, -1, params=params)
             self._fitchng = False
         else:
             self.lines_upd.clear()
@@ -954,7 +989,7 @@ class AbsorptionLines:
             if line == 0:
                 shtxt = "0.0SFIX"
             else:
-                shtxt = "0.0"
+                shtxt = "0.0shift{0:02d}".format(line)
             datlines += ["tempdata/data_{0:02d}.dat  specid=line{0:02d}  fitrange=columns  loadrange=all  resolution=vfwhm({1:.3f}RFIX) shift=vshift({2:s}) columns=[wave:0,flux:1,error:2,fitrange:3,continuum:4]".format(line, res, shtxt)]
         return datlines
 
