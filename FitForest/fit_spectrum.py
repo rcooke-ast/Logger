@@ -50,7 +50,7 @@ class SelectRegions(object):
         self.prop = prop
         self.atom = atom
         self.veld = vel
-        self._xmnsv, self._xmxsv = -self.veld, self.veld
+        self._xmnsv, self._xmxsv = [], []
         self._zqso = self.prop._zem     # The plotted redshift at the centre of each panel
         self.curreg = [None for ii in range(self.naxis)]
         self.fitreg = [None for ii in range(self.naxis)]
@@ -366,7 +366,7 @@ class SelectRegions(object):
             self.update_infobox(default=True)
             return
 
-        # Used keys include:  abcdfgiklmnoprquwyz?[]<>-#
+        # Used keys include:  abcdfgiklmnoprquwyz?[]<>-#123456789
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -390,6 +390,7 @@ class SelectRegions(object):
             print("[ / ]   : pan left and right")
             print("< / >   : zoom in and out")
             print("g       : Go to (centre the mouse position in any panel as Lya in the top left panel)")
+            print("1-9     : Go to (centre the mouse position, assuming the line is Ly1-9)")
             print("b       : Go back (centre the mouse position in any panel as the position before moving)")
             print("i       : Obtain information on the line closest to the cursor")
             print("r       : toggle residuals plotting (i.e. remove master model from data)")
@@ -434,6 +435,9 @@ class SelectRegions(object):
         elif key == 'g':
             # TODO :: Maybe add 1-8 as possible keywords, corresponding to a goto for Ly1-Ly8?
             self.goto(mouseidx)
+        # 1 2 3 4 5 6 7 8 9 ...
+        elif key in ['{0:d}'.format(ii) for ii in range(self.lines.size)]:
+            self.goto(mouseidx, waveid=int(key)-1)
         elif key == 'i':
             self.lineinfo(mouseidx)
         elif key == 'k':
@@ -773,11 +777,13 @@ class SelectRegions(object):
         # Check if any of the parameters have gone "out of bounds"
         return popt[0], popt[1], popt[2]
 
-    def goto(self, mouseidx):
+    def goto(self, mouseidx, waveid=0):
         # Store the old values
-        self._xmnsv, self._xmxsv = self.axs[0].get_xlim()
+        tmp_mn, tmp_mx = self.axs[0].get_xlim()
+        self._xmnsv += [tmp_mn]
+        self._xmxsv += [tmp_mx]
         # Set the new values
-        lam = self.lines[0]*(1.0+self.prop._zem)
+        lam = self.lines[waveid]*(1.0+self.prop._zem)
         vnew = 299792.458*(self.prop._wave[mouseidx]-lam)/lam
         xmn, xmx = vnew-self.veld, vnew+self.veld
         ymn, ymx = self.axs[0].get_ylim()
@@ -787,8 +793,13 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def goback(self):
+        # If we're back to the original value
+        if len(self._xmnsv) == 0:
+            return
         # Go back to the old x coordinate values
-        xmn, xmx = self._xmnsv, self._xmxsv
+        xmn, xmx = self._xmnsv[-1], self._xmxsv[-1]
+        del self._xmnsv[-1]
+        del self._xmxsv[-1]
         ymn, ymx = self.axs[0].get_ylim()
         for i in range(len(self.lines)):
             self.axs[i].set_xlim([xmn, xmx])
