@@ -704,28 +704,27 @@ class SelectRegions(object):
         info = [(result._tend - result._tstart)/3600.0, fres.fnorm, fres.dof, fres.niter, fres.status]
         alis_lines = get_alis_string(result, fres.params, fres.perror, info,
                                      printout=False, getlines=True, save=False)
-        #print(alis_lines)
-        #print(result._contfinal)
+        print(alis_lines)
 
         # Extract parameter values and continuum
         self.lines_upd.clear()   # Start by clearing the update lines, just in case.
         # Scan through the model to find the velocity shifts of each portion of spectrum
         vshift, err_vshift = [], []
-        flag = False
         for ll in range(len(lines)):
+            flag = False
             if lines[ll] == 0:
                 vshift += [0.0]
                 err_vshift += [0.0]
             else:
-                shtxt = "0.0shift{0:02d}".format(lines[ll])
+                shtxt = "shift{0:02d}".format(lines[ll])
                 # Search through alis_lines for the appropriate string
                 alspl = alis_lines.split("\n")
+                cntr = 0
                 for spl in range(len(alspl)):
                     if "# Shift Models:" in alspl[spl]:
                         flag = True
                         continue
                     if flag:
-                        cntr = 0
                         if shtxt in alspl[spl]:
                             vspl = alspl[spl].split()[2]
                             if cntr == 0:
@@ -753,12 +752,20 @@ class SelectRegions(object):
                     flag = 1
                     cntr = 0
                     continue
+                elif "model end" in alspl[spl]:
+                    flag = 0
                 elif "#absorption" in alspl[spl]:
                     # Errors
                     flag = 2
                     cntr = 0
                     continue
+                elif len(alspl[spl].strip()) == 0:
+                    # An empty line
+                    flag = 0
+                # Extract the line profile information
                 if flag == 1:
+                    print(alspl[spl])
+                    print(lines[ll])
                     if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                         vspl = alspl[spl].split()
                         label += [vspl[1].split("=")[1]]
@@ -769,11 +776,27 @@ class SelectRegions(object):
                 elif flag == 2:
                     if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                         vspl = alspl[spl].split()
-                        coldens[cntr] = float(vspl[3].split("n")[0])
-                        redshift[cntr] = float(vspl[4].split("z")[0])
-                        bval[cntr] = float(vspl[5].split("b")[0])
+                        err_coldens[cntr] = float(vspl[3].split("n")[0])
+                        err_redshift[cntr] = float(vspl[4].split("z")[0])
+                        err_bval[cntr] = float(vspl[5].split("b")[0])
                         cntr += 1
-        # Plot best-fitting model and residuals (send to lines_upd)
+        print("--")
+        print(vshift)
+        print(err_vshift)
+        print("--")
+        print(coldens)
+        print(err_coldens)
+        print("--")
+        print(redshift)
+        print(err_redshift)
+        print("--")
+        print(bval)
+        print(err_bval)
+        print("--")
+
+        # TODO :: Need to deal with continuum -- check out:  result._contfinal
+
+        #  Plot best-fitting model and residuals (send to lines_upd)
         for ll in range(nlines):
             errs = [err_coldens[ll], err_redshift[ll], err_bval[ll]]
             self.lines_upd.add_absline(coldens[ll], redshift[ll], bval[ll], label[ll],
