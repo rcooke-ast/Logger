@@ -39,10 +39,10 @@ if __name__ == '__main__':
     axi = fig.add_axes([0.15, .9, .7, 0.08])
     axi.get_xaxis().set_visible(False)
     axi.get_yaxis().set_visible(False)
-    axi.set_xlim((0, 1))
-    axi.set_ylim((0, 1))
     axi.text(0.5, 0.5, "Press '?' to list the available options", transform=axi.transAxes,
              horizontalalignment='center', verticalalignment='center')
+    axi.set_xlim((0, 1))
+    axi.set_ylim((0, 1))
 
     reg = fit_spectrum.SelectRegions(fig.canvas, axs, axi, specs, prop, atom, vel=velwin, lines=Hlines[:nLyseries])
 

@@ -67,6 +67,8 @@ class SelectRegions(object):
         self._respreq = [False, None]  # Does the user need to provide a response before any other operation will be permitted? Once the user responds, the second element of this array provides the action to be performed.
         self.annlines = []
         self.anntexts = []
+        self._actions = []   # Save the state of the 'self' dictionary at various points.
+        self._nstore = 5     # How many previous operations can be stored (and restored)?
 
         if lines is None:
             lines = 1215.6701*np.ones(self.naxis)
@@ -230,6 +232,19 @@ class SelectRegions(object):
         for i in range(self.naxis):
             self.axs[i].set_yscale("linear")
 
+    def store_actions(self):
+        # We don't want to save more than 5 previous operations
+        dcopy = self.__dict__.copy()
+        if len(self._actions) >= self._nstore:
+            del self._actions[0]
+        self._actions += [dcopy]
+        return
+
+    def undo(self):
+        self.__dict__.update(self._actions[-1])
+        self.canvas.draw()
+        return
+
     def mouse_move_callback(self, event):
         """
         Get the index of the spectrum closest to the cursor
@@ -299,11 +314,12 @@ class SelectRegions(object):
         if event.inaxes is None:
             return
         if event.inaxes == self.axi:
-            answer = ""
             if event.xdata > 0.8 and event.xdata < 0.9:
                 answer = "y"
             elif event.xdata >= 0.9:
                 answer = "n"
+            else:
+                return
             self.operations(answer, -1, -1)
             self.update_infobox(default=True)
             return
@@ -433,7 +449,6 @@ class SelectRegions(object):
             self._respreq = [True, "fit_alis"]
             self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'g':
-            # TODO :: Maybe add 1-8 as possible keywords, corresponding to a goto for Ly1-Ly8?
             self.goto(mouseidx)
         # 1 2 3 4 5 6 7 8 9 ...
         elif key in ['{0:d}'.format(ii) for ii in range(self.lines.size)]:
@@ -476,8 +491,7 @@ class SelectRegions(object):
             self.toggle_residuals(resid)
             if autosave: self.autosave('r', axisID, mouseidx, params=[resid])
         elif key == 'u':
-            # TODO :: undo previous operation -- maybe pickle and unpickle a quickload/quicksave?
-            pass
+            self.undo()
         elif key == 'w':
             self.write_data()
         elif key == ']':
@@ -503,6 +517,9 @@ class SelectRegions(object):
         """
         For each operation performed on the data, save information about the operation performed.
         """
+        # Save the current state of the class
+        self.store_actions()
+        # Save the data
         f = open("{0:s}.logger".format(self.prop._outp), "a+")
         if params is None:
             f.write("'{0:s}', {1:d}, {2:d}\n".format(kbID, axisID, mouseidx))
@@ -669,7 +686,7 @@ class SelectRegions(object):
             return
         # Get the ALIS parameter, data, and model lines
         parlines = self.lines_act.alis_parlines(name=self.prop._qsoname)
-        datlines = self.lines_act.alis_datlines(lines)
+        datlines = self.lines_act.alis_datlines(lines, res=self.prop._vfwhm)
         modlines = self.lines_act.alis_modlines(lines)
         # Some testing to check the ALIS file is being constructed correctly
         writefile = False
@@ -902,6 +919,8 @@ class SelectRegions(object):
                           horizontalalignment='center', verticalalignment='center')
             self.axi.text(0.95, 0.5, "NO", transform=self.axi.transAxes,
                           horizontalalignment='center', verticalalignment='center')
+        self.axi.set_xlim((0, 1))
+        self.axi.set_ylim((0, 1))
         self.canvas.draw()
 
     def update_master(self):
@@ -977,6 +996,7 @@ class Props:
         self._outp = qso._path + qso._filename.replace(".dat", "")
         self._outf = outf
         self._zem = qso._zem
+        self._vfwhm = qso._vFWHM
 
     def set_regions(self, arr):
         self._regions = arr.copy()
