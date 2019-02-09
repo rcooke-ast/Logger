@@ -704,7 +704,7 @@ class SelectRegions(object):
         info = [(result._tend - result._tstart)/3600.0, fres.fnorm, fres.dof, fres.niter, fres.status]
         alis_lines = get_alis_string(result, fres.params, fres.perror, info,
                                      printout=False, getlines=True, save=False)
-        print(alis_lines)
+        #print(alis_lines)
 
         # Extract parameter values and continuum
         self.lines_upd.clear()   # Start by clearing the update lines, just in case.
@@ -764,8 +764,6 @@ class SelectRegions(object):
                     flag = 0
                 # Extract the line profile information
                 if flag == 1:
-                    print(alspl[spl])
-                    print(lines[ll])
                     if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                         vspl = alspl[spl].split()
                         label += [vspl[1].split("=")[1]]
@@ -780,19 +778,6 @@ class SelectRegions(object):
                         err_redshift[cntr] = float(vspl[4].split("z")[0])
                         err_bval[cntr] = float(vspl[5].split("b")[0])
                         cntr += 1
-        print("--")
-        print(vshift)
-        print(err_vshift)
-        print("--")
-        print(coldens)
-        print(err_coldens)
-        print("--")
-        print(redshift)
-        print(err_redshift)
-        print("--")
-        print(bval)
-        print(err_bval)
-        print("--")
 
         # TODO :: Need to deal with continuum -- check out:  result._contfinal
 
