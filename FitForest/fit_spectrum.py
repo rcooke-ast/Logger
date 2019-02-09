@@ -201,6 +201,7 @@ class SelectRegions(object):
         # Calculate the model
         for i in range(self.lines_upd.size):
             for j in range(self.naxis):
+                # TODO :: Anywhere a line is drawn, take into account the shifts
                 p0, p1, p2 = self.lines_upd.coldens[i], self.lines_upd.redshift[i], self.lines_upd.bval[i]
                 atidx = np.argmin(np.abs(self.lines[j] - self.atom._atom_wvl))
                 wv = self.lines[j]
@@ -631,7 +632,7 @@ class SelectRegions(object):
         fitvals = self.fit_oneline(wave0, mouseidx)
         if fitvals is not None:
             coldens, zabs, bval = fitvals
-            self.lines_act.add_absline(coldens, zabs, bval, label)
+            self.lines_act.add_absline(coldens, zabs, bval, label, shifts=self.lines.size)
             self.draw_lines()
             self.draw_model()
         self.canvas.draw()
@@ -709,12 +710,12 @@ class SelectRegions(object):
         # Extract parameter values and continuum
         self.lines_upd.clear()   # Start by clearing the update lines, just in case.
         # Scan through the model to find the velocity shifts of each portion of spectrum
-        vshift, vshift_err = [], []
+        vshift, err_vshift = [], []
         flag = False
         for ll in range(len(lines)):
             if lines[ll] == 0:
                 vshift += [0.0]
-                vshift_err += [0.0]
+                err_vshift += [0.0]
             else:
                 shtxt = "0.0shift{0:02d}".format(lines[ll])
                 # Search through alis_lines for the appropriate string
@@ -731,17 +732,53 @@ class SelectRegions(object):
                                 vshift += [float(vspl.split("s")[0])]
                                 cntr += 1
                             elif cntr == 1:
-                                vshift_err += [float(vspl.split("s")[0])]
+                                err_vshift += [float(vspl.split("s")[0])]
                                 break
+        # Convert to numpy arrays
+        vshift = np.array(vshift)
+        err_vshift = np.array(err_vshift)
         # Extract absorption line parameters and their errors
-
-        # TODO :: Update how the master absorption lines are stored.
-        # We either need to append directly to file here all of the results from the ALIS fitting (not ideal,
-        # because the master model won't be plotted correctly), or we need to change how master absorption lines
-        # are stored. In the latter case, we will need to individually store Lya, Lyb etc. from the same system.
-
+        nlines = self.lines_act.size
+        coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
+        redshift, err_redshift = np.zeros(nlines), np.zeros(nlines)
+        bval, err_bval = np.zeros(nlines), np.zeros(nlines)
+        label = []
+        flag = 0
+        for ll in range(nlines):
+            # Search through alis_lines for the appropriate string
+            alspl = alis_lines.split("\n")
+            for spl in range(len(alspl)):
+                if " absorption" in alspl[spl]:
+                    # Values
+                    flag = 1
+                    cntr = 0
+                    continue
+                elif "#absorption" in alspl[spl]:
+                    # Errors
+                    flag = 2
+                    cntr = 0
+                    continue
+                if flag == 1:
+                    if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
+                        vspl = alspl[spl].split()
+                        label += [vspl[1].split("=")[1]]
+                        coldens[cntr] = float(vspl[2].split("n")[0])
+                        redshift[cntr] = float(vspl[3].split("z")[0])
+                        bval[cntr] = float(vspl[4].split("b")[0])
+                        cntr += 1
+                elif flag == 2:
+                    if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
+                        vspl = alspl[spl].split()
+                        coldens[cntr] = float(vspl[3].split("n")[0])
+                        redshift[cntr] = float(vspl[4].split("z")[0])
+                        bval[cntr] = float(vspl[5].split("b")[0])
+                        cntr += 1
         # Plot best-fitting model and residuals (send to lines_upd)
-
+        for ll in range(nlines):
+            errs = [err_coldens[ll], err_redshift[ll], err_bval[ll]]
+            self.lines_upd.add_absline(coldens[ll], redshift[ll], bval[ll], label[ll],
+                                       errs=errs, shifts=vshift, err_shifts=err_vshift)
+        self.draw_model_update()
         # Clean up (delete the data used in the fitting)
         rmtree("tempdata")
         return
@@ -928,6 +965,7 @@ class SelectRegions(object):
         self.update_master_regions()
         self.update_master_lines()
         # Merge models and reset
+        # TODO :: Need two models - a convolved version (to plot) and a non-convolved version (to propagate)
         self.model_mst *= self.model_act
         self.model_act[:] = 1.0
         # Clear the actors
@@ -945,7 +983,7 @@ class SelectRegions(object):
 
     def update_master_lines(self):
         for ii in range(self.lines_act.size):
-            self.lines_mst.add_absline_inst(self.lines_act, 0)
+            self.lines_mst.add_absline_inst(self.lines_act, 0)  # Don't change this zero
             self.lines_act.delete_absline_idx(0)
 
     def update_waverange(self):
@@ -1081,21 +1119,38 @@ class AbsorptionLines:
             parlines += ["plot fits True"]
         return parlines
 
-    def add_absline(self, coldens, redshift, bval, label):
+    def add_absline(self, coldens, redshift, bval, label, errs=None, shifts=None, err_shifts=None):
         # Add the values
         self.coldens = np.append(self.coldens, coldens)
         self.redshift = np.append(self.redshift, redshift)
         self.bval = np.append(self.bval, bval)
         # Add the errors
-        self.err_coldens = np.append(self.err_coldens, coldens)
-        self.err_redshift = np.append(self.err_redshift, redshift)
-        self.err_bval = np.append(self.err_bval, bval)
+        if errs is None:
+            self.err_coldens = np.append(self.err_coldens, coldens)
+            self.err_redshift = np.append(self.err_redshift, redshift)
+            self.err_bval = np.append(self.err_bval, bval)
+        else:
+            self.err_coldens = np.append(self.err_coldens, errs[0])
+            self.err_redshift = np.append(self.err_redshift, errs[1])
+            self.err_bval = np.append(self.err_bval, errs[2])
+        # Append the shifts and errors
+        if type(shifts) is int:
+            self.shifts += [0.0]*shifts
+            self.err_shifts += [0.0]*shifts
+        elif type(shifts) is np.ndarray and type(err_shifts) is np.ndarray:
+            self.shifts.append(shifts.copy())
+            self.err_shifts.append(err_shifts.copy())
+        else:
+            print("OOPS - why is the code here!!")
+            pass
         # Append the label
         self.label += [label]
         return
 
     def add_absline_inst(self, inst, idx):
-        self.add_absline(inst.coldens[idx], inst.redshift[idx], inst.bval[idx], inst.label[idx])
+        errs = [inst.err_coldens[idx], inst.err_redshift[idx], inst.err_bval[idx]]
+        self.add_absline(inst.coldens[idx], inst.redshift[idx], inst.bval[idx], inst.label[idx],
+                         errs=errs, shifts=inst.shifts[idx], err_shifts=inst.err_shifts[idx])
         return
 
     def clear(self):
@@ -1110,6 +1165,9 @@ class AbsorptionLines:
         self.err_coldens = np.array([])
         self.err_redshift = np.array([])
         self.err_bval = np.array([])
+        # Shifts
+        self.shifts = []
+        self.err_shifts = []
         # A label
         self.label = []
         return
@@ -1120,16 +1178,8 @@ class AbsorptionLines:
         """
         # Find the line to be deleted
         lidx, widx = self.find_closest(west, lines)
-        # Delete the values
-        self.coldens = np.delete(self.coldens, (widx,), axis=0)
-        self.redshift = np.delete(self.redshift, (widx,), axis=0)
-        self.bval = np.delete(self.bval, (widx,), axis=0)
-        # Delete the errors
-        self.err_coldens = np.delete(self.err_coldens, (widx,), axis=0)
-        self.err_redshift = np.delete(self.err_redshift, (widx,), axis=0)
-        self.err_bval = np.delete(self.err_bval, (widx,), axis=0)
-        # Delete the label
-        del self.label[widx]
+        # Delete the
+        self.delete_absline_idx(widx)
         return
 
     def delete_absline_idx(self, idx):
@@ -1141,6 +1191,9 @@ class AbsorptionLines:
         self.err_coldens = np.delete(self.err_coldens, (idx,), axis=0)
         self.err_redshift = np.delete(self.err_redshift, (idx,), axis=0)
         self.err_bval = np.delete(self.err_bval, (idx,), axis=0)
+        # Delete the shifts
+        del self.shifts[idx]
+        del self.err_shifts[idx]
         # Delete the label
         del self.label[idx]
         return
@@ -1175,7 +1228,8 @@ class AbsorptionLines:
         print("  Dopp Par = {0:.2f} +/- {1:.2f}".format(self.bval[widx], self.err_bval[widx]))
         return
 
-    def update_absline(self, indx, coldens=None, redshift=None, bval=None, errs=None, label=None):
+    def update_absline(self, indx, coldens=None, redshift=None, bval=None,
+                       errs=None, shifts=None, err_shifts=None, label=None):
         if coldens is not None:
             self.coldens[indx] = coldens
             if errs is not None:
@@ -1188,6 +1242,10 @@ class AbsorptionLines:
             self.bval[indx] = bval
             if errs is not None:
                 self.err_bval[indx] = errs[2]
+        if shifts is not None:
+            self.shifts[indx] = shifts.copy()
+            if err_shifts is not None:
+                self.err_shifts[indx] = err_shifts.copy()
         if label is not None:
             self.label[indx] = label
         return
