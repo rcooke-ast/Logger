@@ -707,6 +707,10 @@ class SelectRegions(object):
                 # Save the temporary data
                 if not os.path.exists("tempdata"):
                     os.mkdir("tempdata")
+                # TODO :: If user is using the goto and goback feature, we need to save
+                # separately the lines and regions that were included in each "layer".
+                # Otherwise, we'll end up generating Voigt profiles over a large range
+                # in the spectrum, and will slow down ALIS considerably.
                 np.savetxt("tempdata/data_{0:02d}.dat".format(axisID), np.transpose((wave, flux, flue, fito, cont)))
             elif axisID == 0:
                 self.update_infobox("You must include fitting data in the top left (i.e. Lya) panel", yesno=False)
