@@ -29,6 +29,34 @@ def voigt(wave, p0, p1, p2, lam, fvl, gam):
     return np.exp(-1.0*tau)
 
 
+def convolve_spec(wave, flux, vfwhm):
+    """
+    Define the functional form of the model
+    --------------------------------------------------------
+    wave  : array of wavelengths
+    flux  : model flux array
+    vfwhm  : array of parameters for this model
+    --------------------------------------------------------
+    """
+    sigd = vfwhm / (2.99792458E5 * (2.0*np.sqrt(2.0*np.log(2.0))))
+    ysize = flux.size
+    fsigd = 6.0*sigd
+    dwav = 0.5 * (wave[2:] - wave[:-2]) / wave[1:-1]
+    dwav = np.append(np.append(dwav[0], dwav), dwav[-1])
+    df = int(np.min([np.int(np.ceil(fsigd/dwav).max()), ysize/2 - 1]))
+    yval = np.zeros(2*df+1)
+    yval[df:2*df+1] = (wave[df:2 * df + 1] / wave[df] - 1.0) / sigd
+    yval[:df] = (wave[:df] / wave[df] - 1.0) / sigd
+    gaus = np.exp(-0.5*yval*yval)
+    size = ysize + gaus.size - 1
+    fsize = 2 ** np.int(np.ceil(np.log2(size)))  # Use this size for a more efficient computation
+    conv = np.fft.fft(flux, fsize)
+    conv *= np.fft.fft(gaus/gaus.sum(), fsize)
+    ret = np.fft.ifft(conv).real.copy()
+    del conv
+    return ret[df:df+ysize]
+
+
 class SelectRegions(object):
     """
     Generate a model and regions to be fit with ALIS
@@ -83,9 +111,10 @@ class SelectRegions(object):
         self.lines_upd = AbsorptionLines()  # Stores all of the information about the updated absorption line.
         self.actors = [np.zeros(self.prop._wave.size) for ii in range(self.naxis)]
         self.lactor = np.zeros(self.prop._wave.size)  # Just the previously selected actor
-        self.model_act = np.ones(self.prop._wave.size)
-        self.model_mst = np.ones(self.prop._wave.size)
-        self.model_upd = np.ones(self.prop._wave.size)
+        self.model_act = np.ones(self.prop._wave.size)  # Model of the actors
+        self.model_mst = np.ones(self.prop._wave.size)  # Model of the master spectrum
+        self.model_cnv = np.ones(self.prop._wave.size)  # Model of the master spectrum, convolved with the line spread function
+        self.model_upd = np.ones(self.prop._wave.size)  # Model of the absorption lines for the spectrum currently being updated
         self._update_model = None
 
         # Unset some of the matplotlib keymaps
@@ -169,7 +198,6 @@ class SelectRegions(object):
             if i is not None:
                 i.pop(0).remove()
         # Generate the model curve for the actors
-        # TODO :: Need to deal with instrument line spread function, somewhere...
         self.model_act = np.ones(self.prop._wave.size)
         for i in range(self.lines_act.size):
             for j in range(self.naxis):
@@ -183,7 +211,7 @@ class SelectRegions(object):
         for i in range(self.naxis):
             lam = self.lines[i]*(1.0 + self._zqso)
             velo = 299792.458*(self.prop._wave-lam)/lam
-            self.modelLines_mst[i] = self.axs[i].plot(velo, self.model_mst, 'b-', linewidth=2.0)
+            self.modelLines_mst[i] = self.axs[i].plot(velo, self.model_cnv, 'b-', linewidth=2.0)
             self.modelLines_act[i] = self.axs[i].plot(velo, self.model_act, 'r-', linewidth=1.0)
         return
 
@@ -607,6 +635,7 @@ class SelectRegions(object):
                     fv = self.atom._atom_fvl[atidx]
                     gm = self.atom._atom_gam[atidx]
                     self.model_mst *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
+            self.model_cnv = convolve_spec(self.prop._wave.copy(), self.model_mst.copy(), self.prop._vfwhm)
         return
 
     def key_release_callback(self, event):
@@ -674,7 +703,7 @@ class SelectRegions(object):
                 fitr[np.where(regwhr)] = 1
                 fito = fitr[lpixend - nextra - 1:rpixend + nextra]
                 # Get the continuum
-                cont = self.model_mst[lpixend - nextra - 1:rpixend + nextra]
+                cont = self.model_cnv[lpixend - nextra - 1:rpixend + nextra]
                 # Save the temporary data
                 if not os.path.exists("tempdata"):
                     os.mkdir("tempdata")
@@ -824,8 +853,8 @@ class SelectRegions(object):
         gm = self.atom._atom_gam[atidx]
         # Prepare the data to be fitted
         if self._resid:
-            flxfit = self.prop._flux / (self.model_mst*self.model_act)
-            flefit = self.prop._flue / (self.model_mst*self.model_act)
+            flxfit = self.prop._flux / (self.model_cnv*self.model_act)
+            flefit = self.prop._flue / (self.model_cnv*self.model_act)
         else:
             flxfit = self.prop._flux
             flefit = self.prop._flue
@@ -902,7 +931,7 @@ class SelectRegions(object):
                 self.specs[i].set_ydata(self.prop._flux)
             else:
                 # Otherwise, plot the residuals
-                self.specs[i].set_ydata(self.prop._flux/(self.model_mst*self.model_act))
+                self.specs[i].set_ydata(self.prop._flux/(self.model_cnv*self.model_act))
         self.canvas.draw()
         self.canvas.flush_events()
         self._resid = not resid
@@ -975,6 +1004,7 @@ class SelectRegions(object):
         # Merge models and reset
         # TODO :: Need two models - a convolved version (to plot) and a non-convolved version (to propagate)
         self.model_mst *= self.model_act
+        self.model_cnv = convolve_spec(self.prop._wave.copy(), self.model_mst.copy(), self.prop._vfwhm)
         self.model_act[:] = 1.0
         # Clear the actors
         self.update_actors(None, clear=True)
