@@ -809,6 +809,11 @@ class SelectRegions(object):
                         cntr += 1
 
         # TODO :: Need to deal with continuum -- check out:  result._contfinal
+        # Perhaps we can store an array of continuum adjustments? How will this affect convolution?
+        # We need to have one continuum adjustment array for the actors, and then multiply this onto
+        # model_mst when merging, then reset the actors continuum adjustment array to one. We could
+        # also store a master array of continuum adjustments (just for information, since the adjustments
+        # have already been applied to model_mst), but this would need to be saved and loaded.
 
         #  Plot best-fitting model and residuals (send to lines_upd)
         for ll in range(nlines):
@@ -1002,7 +1007,6 @@ class SelectRegions(object):
         self.update_master_regions()
         self.update_master_lines()
         # Merge models and reset
-        # TODO :: Need two models - a convolved version (to plot) and a non-convolved version (to propagate)
         self.model_mst *= self.model_act
         self.model_cnv = convolve_spec(self.prop._wave.copy(), self.model_mst.copy(), self.prop._vfwhm)
         self.model_act[:] = 1.0
