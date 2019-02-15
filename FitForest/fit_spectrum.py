@@ -12,6 +12,7 @@ from scipy.optimize import curve_fit
 from scipy.special import wofz
 from alis.alis import alis
 from alis.alsave import save_model as get_alis_string
+from copy import deepcopy
 matplotlib.use('Qt5Agg')
 
 
@@ -115,6 +116,7 @@ class SelectRegions(object):
         self.model_mst = np.ones(self.prop._wave.size)  # Model of the master spectrum
         self.model_cnv = np.ones(self.prop._wave.size)  # Model of the master spectrum, convolved with the line spread function
         self.model_upd = np.ones(self.prop._wave.size)  # Model of the absorption lines for the spectrum currently being updated
+        self.model_cnt = np.ones(self.prop._wave.size)  # Model of the continuum fitted with ALIS.
         self._update_model = None
 
         # Unset some of the matplotlib keymaps
@@ -284,6 +286,11 @@ class SelectRegions(object):
         if axisID is not None:
             if axisID < self.naxis:
                 if self._update_model is not None:
+                    if self._update_model[0] not in ['a', 'z']:
+                        # Not manually updating absorption line, but updating something else
+                        self.mmx, self.mmy = event.xdata, event.ydata
+                        self.mouseidx = self.get_ind_under_point(axisID, event.xdata)
+                        return
                     lidx, widx = self._update_model[1], self._update_model[2]
                     mouseidx = self.get_ind_under_point(axisID, event.xdata)
                     if self._update_model[0] == 'a':
@@ -395,6 +402,9 @@ class SelectRegions(object):
             if key != "y" and key != "n":
                 return
             else:
+                # Switch off the required response
+                self._respreq[0] = False
+                # Deal with the response
                 if self._respreq[1] == "fit_alis":
                     self.merge_alis(key)
                     if autosave: self.autosave(key, axisID, mouseidx)
@@ -405,8 +415,6 @@ class SelectRegions(object):
                     if autosave: self.autosave(key, axisID, mouseidx)
                 else:
                     return
-                # Switch off the required response
-                self._respreq[0] = False
             # Reset the info box
             self.update_infobox(default=True)
             return
@@ -445,6 +453,7 @@ class SelectRegions(object):
                 if self.lines_act.size == 0:
                     return
                 cls = self.lines_act.find_closest(self.prop._wave[mouseidx], self.lines)
+                self.lines_upd.clear()
                 self.lines_upd.add_absline_inst(self.lines_act, cls[1])
                 self._update_model = [key, cls[0], cls[1]]
             elif self._update_model[0] == key:
@@ -453,20 +462,15 @@ class SelectRegions(object):
                           self.lines_upd.bval[0], self.lines_upd.label[0], None]
                 # Update the absorption line
                 self.operations('ul', axisID, mouseidx, params=params)
-                self.lines_upd.delete_absline_idx(0)
-                self._update_model = None
-                self.draw_model_update()
+                self.clear(axisID, kind='update')
             else:
                 # If any other key is pressed, ignore the update
-                if self.lines_upd.size != 0:
-                    self.lines_upd.delete_absline_idx(0)
-                self._update_model = None
-                self.draw_model_update()
+                self.clear(axisID, kind='update')
             self._fitchng = True
         elif key == 'b':
             self.goback()
         elif key == 'c':
-            self.update_actors(axisID, clear=True)
+            self.clear(axisID, kind='actors')
             if autosave: self.autosave('c', axisID, mouseidx)
             self._fitchng = True
         elif key == 'd':
@@ -474,9 +478,9 @@ class SelectRegions(object):
             if autosave: self.autosave('d', axisID, mouseidx)
             self._fitchng = True
         elif key == 'f':
-            self.fit_alis()
-            self._respreq = [True, "fit_alis"]
-            self.update_infobox(message="Accept fit?", yesno=True)
+            self._respreq = self.fit_alis()
+            if self._respreq[0]:
+                self.update_infobox(message="Accept fit?", yesno=True)
         elif key == 'g':
             self.goto(mouseidx)
         # 1 2 3 4 5 6 7 8 9 ...
@@ -541,6 +545,9 @@ class SelectRegions(object):
             self.update_absline(params=params)
             if autosave: self.autosave('ul', axisID, mouseidx, params=params)
             self._fitchng = True
+        elif key == 'ulc':
+            self.lines_act.copy(self.lines_upd)
+            if autosave: self.autosave('ulc', axisID, mouseidx)
 
     def autosave(self, kbID, axisID, mouseidx, params=None):
         """
@@ -714,10 +721,10 @@ class SelectRegions(object):
                 np.savetxt("tempdata/data_{0:02d}.dat".format(axisID), np.transpose((wave, flux, flue, fito, cont)))
             elif axisID == 0:
                 self.update_infobox("You must include fitting data in the top left (i.e. Lya) panel", yesno=False)
-                return
+                return [False, None]
         # Make sure there are data to be fit!
         if len(lines) == 0:
-            return
+            return [False, None]
         # Get the ALIS parameter, data, and model lines
         parlines = self.lines_act.alis_parlines(name=self.prop._qsoname)
         datlines = self.lines_act.alis_datlines(lines, res=self.prop._vfwhm)
@@ -811,36 +818,31 @@ class SelectRegions(object):
                         err_redshift[cntr] = float(vspl[4].split("z")[0])
                         err_bval[cntr] = float(vspl[5].split("b")[0])
                         cntr += 1
-
-        # TODO :: Need to deal with continuum -- check out:  result._contfinal
-        # Perhaps we can store an array of continuum adjustments? How will this affect convolution?
-        # We need to have one continuum adjustment array for the actors, and then multiply this onto
-        # model_mst when merging, then reset the actors continuum adjustment array to one. We could
-        # also store a master array of continuum adjustments (just for information, since the adjustments
-        # have already been applied to model_mst), but this would need to be saved and loaded.
-
+        # Store the continuum fits
+        for cc in range(len(result._contfinal)):
+            val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
+            ww = np.where(result._contfinal[cc] > -10.0)
+            self.model_cnt[val[0][ww]] *= result._contfinal[cc][ww]
         #  Plot best-fitting model and residuals (send to lines_upd)
         for ll in range(nlines):
             errs = [err_coldens[ll], err_redshift[ll], err_bval[ll]]
             self.lines_upd.add_absline(coldens[ll], redshift[ll], bval[ll], label[ll],
                                        errs=errs, shifts=vshift, err_shifts=err_vshift)
+        self._update_model = ['f']
         self.draw_model_update()
         # Clean up (delete the data used in the fitting)
         rmtree("tempdata")
-        return
+        return [True, "fit_alis"]
 
     def merge_alis(self, resp):
         # If the user is happy with the ALIS fit, update the actors with the new model parameters
-        # TODO :: complete the two options (y or n) here
         if resp == "y":
-#            for ll in range(self.lines_upd.size):
-#                errs = [err_coldens, err_redshift, err_bval]
-#                params = [INDEX, coldens, redshift, bval, label, errs=errs]
-#                self.operations('ul', -1, -1, params=params)
-            self._fitchng = False
+            self.operations('ulc', -1, -1)
+            self._fitchng = False  # Saving is up to date
         else:
-            self.lines_upd.clear()
             pass
+        self.clear(None, kind='update')
+        return
 
     def fit_oneline(self, wave0, mouseidx):
         """ This performs a very quick fit to the line (using only one actor) """
@@ -862,8 +864,8 @@ class SelectRegions(object):
         gm = self.atom._atom_gam[atidx]
         # Prepare the data to be fitted
         if self._resid:
-            flxfit = self.prop._flux / (self.model_cnv*self.model_act)
-            flefit = self.prop._flue / (self.model_cnv*self.model_act)
+            flxfit = self.prop._flux / (self.model_cnv*self.model_act*self.model_cnt)
+            flefit = self.prop._flue / (self.model_cnv*self.model_act*self.model_cnt)
         else:
             flxfit = self.prop._flux
             flefit = self.prop._flue
@@ -940,10 +942,27 @@ class SelectRegions(object):
                 self.specs[i].set_ydata(self.prop._flux)
             else:
                 # Otherwise, plot the residuals
-                self.specs[i].set_ydata(self.prop._flux/(self.model_cnv*self.model_act))
+                self.specs[i].set_ydata(self.prop._flux/(self.model_cnv*self.model_act*self.model_cnt))
         self.canvas.draw()
         self.canvas.flush_events()
         self._resid = not resid
+
+    def clear(self, axisID, kind='update'):
+        if kind == 'actors':
+            self.update_actors(axisID, clear=True)
+        elif kind == 'update':
+            self.lines_upd.clear()
+            self._update_model = None  # lines_upd should no longer be plotted.
+        # Update the plot
+        self.update_plot()
+        return
+
+    def update_plot(self):
+        self.draw_lines()
+        self.draw_model()
+        self.draw_model_update()
+        self.canvas.draw()
+        self.canvas.flush_events()
 
     def plot_actor(self, axisID):
         # Plot the new actor
@@ -1011,15 +1030,14 @@ class SelectRegions(object):
         self.update_master_regions()
         self.update_master_lines()
         # Merge models and reset
-        self.model_mst *= self.model_act
+        self.model_mst *= self.model_act*self.model_cnt
         self.model_cnv = convolve_spec(self.prop._wave.copy(), self.model_mst.copy(), self.prop._vfwhm)
         self.model_act[:] = 1.0
+        self.model_cnt[:] = 1.0
         # Clear the actors
-        self.update_actors(None, clear=True)
+        self.clear(None, kind='actors')
         # Update the plotted lines
-        self.draw_lines()
-        self.draw_model()
-        self.canvas.draw()
+        self.update_plot()
         return
 
     def update_master_regions(self):
@@ -1216,6 +1234,22 @@ class AbsorptionLines:
         self.err_shifts = []
         # A label
         self.label = []
+        return
+
+    def copy(self, inst):
+        # Values
+        self.coldens = inst.coldens.copy()
+        self.redshift = inst.redshift.copy()
+        self.bval = inst.bval.copy()
+        # Errors
+        self.err_coldens = inst.err_coldens.copy()
+        self.err_redshift = inst.err_redshift.copy()
+        self.err_bval = inst.err_bval.copy()
+        # Shifts
+        self.shifts = deepcopy(inst.shifts)
+        self.err_shifts = deepcopy(inst.err_shifts)
+        # A label
+        self.label = deepcopy(inst.label)
         return
 
     def delete_absline(self, west, lines):
