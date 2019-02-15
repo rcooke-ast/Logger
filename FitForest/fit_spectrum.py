@@ -742,7 +742,7 @@ class SelectRegions(object):
         # Run the fit with ALIS
         self.update_infobox("Commencing fit with ALIS...", yesno=False)
         try:
-            result = alis(parlines=parlines, datlines=datlines, modlines=modlines)
+            result = alis(parlines=parlines, datlines=datlines, modlines=modlines, verbose=-1)
             self.update_infobox("Fit complete!", yesno=False)
         except:
             self.update_infobox("Fit failed - check terminal output", yesno=False)
@@ -1173,7 +1173,7 @@ class AbsorptionLines:
         if basic:
             parlines += ["out model False"]
             parlines += ["out fits False"]
-            parlines += ["out verbose 0"]
+            parlines += ["out verbose -1"]
         else:
             parlines += ["out model True"]
             parlines += ["out covar {0:s}.mod.out.covar".format(name)]
