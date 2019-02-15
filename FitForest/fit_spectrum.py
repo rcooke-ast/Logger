@@ -232,6 +232,8 @@ class SelectRegions(object):
         for i in range(self.lines_upd.size):
             for j in range(self.naxis):
                 # TODO :: Anywhere a line is drawn, take into account the shifts
+                # or, store the redshift and error of each independent line in the shifts array
+                # This may require a model of the covariance between variables in fit_alis.
                 p0, p1, p2 = self.lines_upd.coldens[i], self.lines_upd.redshift[i], self.lines_upd.bval[i]
                 atidx = np.argmin(np.abs(self.lines[j] - self.atom._atom_wvl))
                 wv = self.lines[j]
@@ -738,7 +740,13 @@ class SelectRegions(object):
             fil.write("model read\n" + "\n".join(modlines) + "\nmodel end\n")
             fil.close()
         # Run the fit with ALIS
-        result = alis(parlines=parlines, datlines=datlines, modlines=modlines)
+        self.update_infobox("Commencing fit with ALIS...", yesno=False)
+        try:
+            result = alis(parlines=parlines, datlines=datlines, modlines=modlines)
+            self.update_infobox("Fit complete!", yesno=False)
+        except:
+            self.update_infobox("Fit failed - check terminal output", yesno=False)
+            return
         # Convert the results into an easy read format
         fres = result._fitresults
         info = [(result._tend - result._tstart)/3600.0, fres.fnorm, fres.dof, fres.niter, fres.status]
