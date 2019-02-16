@@ -58,6 +58,28 @@ def convolve_spec(wave, flux, vfwhm):
     return ret[df:df+ysize]
 
 
+def newstart(covar, num):
+    """
+    Using a covariance matrix, calculate num realisations of the model parameters
+    """
+    # Find the non-zero elements in the covariance matrix
+    cvsize = covar.shape[0]
+    cxzero, cyzero = np.where(covar == 0.0)
+    bxzero, byzero = np.bincount(cxzero), np.bincount(cyzero)
+    wxzero, wyzero = np.where(bxzero == cvsize)[0], np.where(byzero == cvsize)[0]
+    zrocol = np.intersect1d(wxzero, wyzero)  # This is the list of columns (or rows), where all elements are zero
+    # Create a mask for the non-zero elements
+    mask = np.zeros_like(covar)
+    mask[:, zrocol], mask[zrocol, :] = 1, 1
+    cvnz = np.zeros((cvsize-zrocol.size, cvsize-zrocol.size))
+    cvnz[np.where(cvnz == 0.0)] = covar[np.where(mask == 0.0)]
+    # Generate a new set of starting parameters from the covariance matrix
+    x_covar_fit = np.matrix(np.random.standard_normal((cvnz.shape[0], num)))
+    c_covar_fit = np.matrix(cvnz)
+    u_covar_fit = np.linalg.cholesky(c_covar_fit)
+    return u_covar_fit * x_covar_fit
+
+
 class SelectRegions(object):
     """
     Generate a model and regions to be fit with ALIS
@@ -716,10 +738,6 @@ class SelectRegions(object):
                 # Save the temporary data
                 if not os.path.exists("tempdata"):
                     os.mkdir("tempdata")
-                # TODO :: If user is using the goto and goback feature, we need to save
-                # separately the lines and regions that were included in each "layer".
-                # Otherwise, we'll end up generating Voigt profiles over a large range
-                # in the spectrum, and will slow down ALIS considerably.
                 np.savetxt("tempdata/data_{0:02d}.dat".format(axisID), np.transpose((wave, flux, flue, fito, cont)))
             elif axisID == 0:
                 self.update_infobox("You must include fitting data in the top left (i.e. Lya) panel", yesno=False)
@@ -747,6 +765,28 @@ class SelectRegions(object):
         except:
             self.update_infobox("Fit failed - check terminal output", yesno=False)
             return
+
+        # Unpack all the ALIS fit, ready for storage in an instance of AbsorptionLines.
+        resdict = self.unpack_alis_fits(result, lines)
+
+        # Plot best-fitting model and residuals (send to lines_upd)
+        for ll in range(nlines):
+            errs = [err_coldens[ll], err_redshift[ll], err_bval[ll]]
+            self.lines_upd.add_absline(coldens[ll], redshift[ll], bval[ll], label[ll],
+                                       errs=errs, shifts=vshift, err_shifts=err_vshift)
+        self._update_model = ['f']
+        self.draw_model_update()
+        # Clean up (delete the data used in the fitting)
+        rmtree("tempdata")
+        return [True, "fit_alis"]
+
+    def unpack_alis_fits(self, result, lines, numsims=10000):
+        """
+        Convert the returned instance of ALIS into absorption line parameters and errors that can be stored
+        """
+        # First create a dictionary that will store the relevant results
+        resdict = dict({})
+
         # Convert the results into an easy read format
         fres = result._fitresults
         info = [(result._tend - result._tstart)/3600.0, fres.fnorm, fres.dof, fres.niter, fres.status]
@@ -784,6 +824,7 @@ class SelectRegions(object):
         # Convert to numpy arrays
         vshift = np.array(vshift)
         err_vshift = np.array(err_vshift)
+
         # Extract absorption line parameters and their errors
         nlines = self.lines_act.size
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
@@ -826,21 +867,18 @@ class SelectRegions(object):
                         err_redshift[cntr] = float(vspl[4].split("z")[0])
                         err_bval[cntr] = float(vspl[5].split("b")[0])
                         cntr += 1
+
         # Store the continuum fits
         for cc in range(len(result._contfinal)):
             val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
             ww = np.where(result._contfinal[cc] > -10.0)
             self.model_cnt[val[0][ww]] *= result._contfinal[cc][ww]
-        #  Plot best-fitting model and residuals (send to lines_upd)
-        for ll in range(nlines):
-            errs = [err_coldens[ll], err_redshift[ll], err_bval[ll]]
-            self.lines_upd.add_absline(coldens[ll], redshift[ll], bval[ll], label[ll],
-                                       errs=errs, shifts=vshift, err_shifts=err_vshift)
-        self._update_model = ['f']
-        self.draw_model_update()
-        # Clean up (delete the data used in the fitting)
-        rmtree("tempdata")
-        return [True, "fit_alis"]
+
+        # TODO :: obtain the redshift and uncertainty of every line individually
+        # Generate a new set of starting parameters
+        ptb = newstart(fres.covar, numsims)
+
+        return resdict
 
     def merge_alis(self, resp):
         # If the user is happy with the ALIS fit, update the actors with the new model parameters
