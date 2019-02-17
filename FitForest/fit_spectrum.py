@@ -829,6 +829,7 @@ class SelectRegions(object):
         nlines = self.lines_act.size
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
         redshift, err_redshift = np.zeros(nlines), np.zeros(nlines)
+        redshift_all, err_redshift_all = [], []
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
         label = []
         flag = 0
@@ -859,6 +860,7 @@ class SelectRegions(object):
                         coldens[cntr] = float(vspl[2].split("n")[0])
                         redshift[cntr] = float(vspl[3].split("z")[0])
                         bval[cntr] = float(vspl[4].split("b")[0])
+                        redshift_all += [np.zeros(vshift.size)]
                         cntr += 1
                 elif flag == 2:
                     if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
@@ -866,7 +868,33 @@ class SelectRegions(object):
                         err_coldens[cntr] = float(vspl[3].split("n")[0])
                         err_redshift[cntr] = float(vspl[4].split("z")[0])
                         err_bval[cntr] = float(vspl[5].split("b")[0])
+                        err_redshift_all += [np.zeros(vshift.size)]
                         cntr += 1
+
+        # Take into account covariance between the velocity shift and redshift
+        for ll in range(nlines):
+        # TODO :: obtain the redshift and uncertainty of every line individually
+        # Generate a new set of starting parameters
+        ptb = newstart(fres.covar, numsims)
+
+        # Start by giving the parameter values
+        inarr = np.array(fres.params)
+        HIarr = [19.5827427, 19.0815415, 17.2281565, 18.6812038, 16.8586261, 16.2417243, 16.3648780]
+        cntr = np.zeros(fres.covar.shape[0])
+        cntr[np.where(np.diag(fres.covar) > 0.0)] = 1.0
+        cntr = np.cumsum(cntr) - 1
+        # Find the indices that we need
+        idx, pidx = np.zeros(len(HIarr), dtype=np.int), np.zeros(len(HIarr), dtype=np.int)
+        for vv in range(len(HIarr)):
+            amin = np.argmin(np.abs(inarr - HIarr[vv]))
+            idx[vv] = amin
+            pidx[vv] = cntr[amin]
+
+        # Calculate total column densities
+        cols = np.power(10.0, np.outer(inarr[idx], np.ones(numsims)) + ptb[pidx, :])
+        coltot = np.log10(np.sum(cols, axis=0))
+        print(elem, "=", np.mean(coltot), np.std(coltot))
+
 
         # Store the continuum fits
         for cc in range(len(result._contfinal)):
@@ -874,10 +902,15 @@ class SelectRegions(object):
             ww = np.where(result._contfinal[cc] > -10.0)
             self.model_cnt[val[0][ww]] *= result._contfinal[cc][ww]
 
-        # TODO :: obtain the redshift and uncertainty of every line individually
-        # Generate a new set of starting parameters
-        ptb = newstart(fres.covar, numsims)
+        # Store everything compactly in a dictionary
+        resdict['coldens'] = coldens
+        resdict['coldens_err'] = err_coldens
+        resdict['redshift'] = redshift
+        resdict['redshift_err'] = err_redshift
+        resdict['bval'] = bval
+        resdict['bval_err'] = err_bval
 
+        # Return the dictionary
         return resdict
 
     def merge_alis(self, resp):
