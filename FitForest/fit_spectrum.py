@@ -750,9 +750,9 @@ class SelectRegions(object):
         datlines = self.lines_act.alis_datlines(lines, res=self.prop._vfwhm)
         modlines = self.lines_act.alis_modlines(lines)
         # Some testing to check the ALIS file is being constructed correctly
-        writefile = False
+        writefile = True
         if writefile:
-            fil = open("testfile.mod", 'w')
+            fil = open("tempdata/testfile.mod", 'w')
             fil.write("\n".join(parlines) + "\n\n")
             fil.write("data read\n" + "\n".join(datlines) + "\ndata end\n\n")
             fil.write("model read\n" + "\n".join(modlines) + "\nmodel end\n")
@@ -767,20 +767,22 @@ class SelectRegions(object):
             return
 
         # Unpack all the ALIS fit, ready for storage in an instance of AbsorptionLines.
-        resdict = self.unpack_alis_fits(result, lines)
+        res = self.unpack_alis_fits(result, lines)
 
         # Plot best-fitting model and residuals (send to lines_upd)
+        nlines = res['coldens'].size
         for ll in range(nlines):
-            errs = [err_coldens[ll], err_redshift[ll], err_bval[ll]]
-            self.lines_upd.add_absline(coldens[ll], redshift[ll], bval[ll], label[ll],
-                                       errs=errs, shifts=vshift, err_shifts=err_vshift)
+            errs = [res['coldens_err'][ll], res['redshift_err'][ll], res['bval_err'][ll]]
+            self.lines_upd.add_absline(res['coldens'][ll], res['redshift'][ll], res['bval'][ll], res['label'][ll],
+                                       errs=errs, shifts=res['redshift_all'], err_shifts=res['redshift_all_err'])
         self._update_model = ['f']
         self.draw_model_update()
         # Clean up (delete the data used in the fitting)
-        rmtree("tempdata")
+        if not writefile:
+            rmtree("tempdata")
         return [True, "fit_alis"]
 
-    def unpack_alis_fits(self, result, lines, numsims=10000):
+    def unpack_alis_fits(self, result, lines, numsims=100000):
         """
         Convert the returned instance of ALIS into absorption line parameters and errors that can be stored
         """
@@ -829,7 +831,7 @@ class SelectRegions(object):
         nlines = self.lines_act.size
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
         redshift, err_redshift = np.zeros(nlines), np.zeros(nlines)
-        redshift_all, err_redshift_all = [], []
+        redshift_all, err_redshift_all = np.zeros((nlines, vshift.size)), np.zeros((nlines, vshift.size))
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
         label = []
         flag = 0
@@ -871,44 +873,70 @@ class SelectRegions(object):
                         err_redshift_all += [np.zeros(vshift.size)]
                         cntr += 1
 
-        # Take into account covariance between the velocity shift and redshift
-        for ll in range(nlines):
-        # TODO :: obtain the redshift and uncertainty of every line individually
         # Generate a new set of starting parameters
         ptb = newstart(fres.covar, numsims)
-
-        # Start by giving the parameter values
         inarr = np.array(fres.params)
-        HIarr = [19.5827427, 19.0815415, 17.2281565, 18.6812038, 16.8586261, 16.2417243, 16.3648780]
         cntr = np.zeros(fres.covar.shape[0])
         cntr[np.where(np.diag(fres.covar) > 0.0)] = 1.0
         cntr = np.cumsum(cntr) - 1
-        # Find the indices that we need
-        idx, pidx = np.zeros(len(HIarr), dtype=np.int), np.zeros(len(HIarr), dtype=np.int)
-        for vv in range(len(HIarr)):
-            amin = np.argmin(np.abs(inarr - HIarr[vv]))
-            idx[vv] = amin
-            pidx[vv] = cntr[amin]
 
-        # Calculate total column densities
-        cols = np.power(10.0, np.outer(inarr[idx], np.ones(numsims)) + ptb[pidx, :])
-        coltot = np.log10(np.sum(cols, axis=0))
-        print(elem, "=", np.mean(coltot), np.std(coltot))
-
+        # Take into account covariance between the velocity shift and redshift
+        idx, pidx = np.zeros(2, dtype=np.int), np.zeros(2, dtype=np.int)
+        for ll in range(nlines):
+            # For each cloud
+            lmin = np.argmin(np.abs(inarr - redshift[ll]))
+            idx[0] = lmin
+            pidx[0] = cntr[lmin]
+            for ss in range(vshift.size):
+                # For each Lyman series absorption line
+                smin = np.argmin(np.abs(inarr - vshift[ss]))
+                idx[1] = smin
+                pidx[1] = cntr[smin]
+                # Calculate the perturbed values
+                ptrbvals = np.outer(inarr[idx], np.ones(numsims)) + ptb[pidx, :]
+                # Determine the redshift of the line (take into account the vshift) and store the result
+                newzabs = (1.0 + ptrbvals[0, :]) / (1.0 - ptrbvals[1, :] / 299792.458) - 1.0  # This has been explicitly checked
+                redshift_all[ll, ss] = np.mean(newzabs)
+                err_redshift_all[ll, ss] = np.std(newzabs)
+        # TODO :: Not all lines appear in all data, so only some of redshift_all and err_redshift_all are actually needed - some are spurious.
 
         # Store the continuum fits
+        self.model_cnt[:] = 1.0
         for cc in range(len(result._contfinal)):
             val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
             ww = np.where(result._contfinal[cc] > -10.0)
             self.model_cnt[val[0][ww]] *= result._contfinal[cc][ww]
 
         # Store everything compactly in a dictionary
+        resdict['label'] = deepcopy(self.lines_act.label)
         resdict['coldens'] = coldens
         resdict['coldens_err'] = err_coldens
         resdict['redshift'] = redshift
         resdict['redshift_err'] = err_redshift
         resdict['bval'] = bval
         resdict['bval_err'] = err_bval
+        resdict['redshift_all'] = redshift_all
+        resdict['redshift_all_err'] = err_redshift_all
+
+        if True:
+            np.save("work/fres_covar", fres.covar)
+            np.save("work/inarr", inarr)
+            np.save("work/redshift", redshift)
+            np.save("work/err_redshift", err_redshift)
+            np.save("work/vshift", vshift)
+            np.save("work/err_vshift", err_vshift)
+            for ll in range(nlines):
+                print("-----------------")
+                print(resdict['label'][ll])
+                print(resdict['coldens'][ll])
+                print(resdict['coldens_err'][ll])
+                print(resdict['redshift'][ll])
+                print(resdict['redshift_err'][ll])
+                print(resdict['bval'][ll])
+                print(resdict['bval_err'][ll])
+                print(resdict['redshift_all'][ll,:])
+                print(resdict['redshift_all_err'][ll,:])
+                print("-----------------")
 
         # Return the dictionary
         return resdict
