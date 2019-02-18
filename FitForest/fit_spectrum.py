@@ -85,7 +85,7 @@ class SelectRegions(object):
     Generate a model and regions to be fit with ALIS
     """
 
-    def __init__(self, canvas, axs, axi, specs, prop, atom, vel=500.0, lines=None):
+    def __init__(self, canvas, axs, axi, specs, prop, atom, vel=500.0, lines=None, resid=None):
         """
         axs : ndarray
           array of all data axes
@@ -93,7 +93,12 @@ class SelectRegions(object):
           axis used to display information
         vel : float
           Default +/- plotting window in km/s
+        resloc : list (two element)
+          data location of the centre and 1 sigma value of the plotted residuals. Note: +/-2 sigma residuals are plotted
         """
+        if resid is None:
+            resid = [1.2, 0.05]
+
         self.axs = axs
         self.axi = axi
         self.naxis = len(axs)
@@ -101,6 +106,7 @@ class SelectRegions(object):
         self.prop = prop
         self.atom = atom
         self.veld = vel
+        self.resloc = resid
         self._xmnsv, self._xmxsv = [], []
         self._zqso = self.prop._zem     # The plotted redshift at the centre of each panel
         self.curreg = [None for ii in range(self.naxis)]
@@ -129,6 +135,7 @@ class SelectRegions(object):
         self.modelLines_act = [None for ii in range(self.naxis)]  # The Line instance of the plotted actors model
         self.modelLines_mst = [None for ii in range(self.naxis)]  # The Line instance of the plotted master model
         self.modelLines_upd = [None for ii in range(self.naxis)]  # The Line instance of the plotted model that is being updated
+        self.modelCont_upd = [None for ii in range(self.naxis)]  # The Line instance of the plotted continuum that is being updated
         self.lines_act = AbsorptionLines()  # Stores all of the information about the actor absorption lines.
         self.lines_mst = AbsorptionLines()  # Stores all of the information about the master absorption lines.
         self.lines_upd = AbsorptionLines()  # Stores all of the information about the updated absorption line.
@@ -244,6 +251,8 @@ class SelectRegions(object):
             if self.modelLines_upd[i] is not None:
                 self.modelLines_upd[i].pop(0).remove()
                 self.modelLines_upd[i] = None
+                self.modelCont_upd[i].pop(0).remove()
+                self.modelCont_upd[i] = None
         # Generate the model curve for the actors
         self.model_upd = np.ones(self.prop._wave.size)
         # If not currently updating, return
@@ -266,6 +275,7 @@ class SelectRegions(object):
         for i in range(self.naxis):
             lam = self.lines[i] * (1.0 + self._zqso)
             velo = 299792.458 * (self.prop._wave - lam) / lam
+            self.modelCont_upd[i] = self.axs[i].plot(velo, self.model_cnt, 'g-', linewidth=2.0, alpha=0.5)
             self.modelLines_upd[i] = self.axs[i].plot(velo, self.model_upd, 'g-', linewidth=1.0)
         self.canvas.draw()
         return
@@ -692,9 +702,13 @@ class SelectRegions(object):
         fitvals = self.fit_oneline(wave0, mouseidx)
         if fitvals is not None:
             coldens, zabs, bval = fitvals
-            self.lines_act.add_absline(coldens, zabs, bval, label, shifts=self.lines.size)
-            self.draw_lines()
-            self.draw_model()
+            inbounds = self.check_absline_bounds(coldens, zabs, bval)
+            if inbounds:
+                self.lines_act.add_absline(coldens, zabs, bval, label, shifts=self.lines.size)
+                self.draw_lines()
+                self.draw_model()
+            else:
+                self.update_infobox("Single line fit failed (out of bounds parameters) - Try again", yesno=False)
         self.canvas.draw()
 
     def update_absline(self, params=None):
@@ -749,14 +763,16 @@ class SelectRegions(object):
         parlines = self.lines_act.alis_parlines(name=self.prop._qsoname)
         datlines = self.lines_act.alis_datlines(lines, res=self.prop._vfwhm)
         modlines = self.lines_act.alis_modlines(lines)
+
         # Some testing to check the ALIS file is being constructed correctly
-        writefile = True
+        writefile = False
         if writefile:
             fil = open("tempdata/testfile.mod", 'w')
             fil.write("\n".join(parlines) + "\n\n")
             fil.write("data read\n" + "\n".join(datlines) + "\ndata end\n\n")
             fil.write("model read\n" + "\n".join(modlines) + "\nmodel end\n")
             fil.close()
+
         # Run the fit with ALIS
         self.update_infobox("Commencing fit with ALIS...", yesno=False)
         try:
@@ -764,7 +780,7 @@ class SelectRegions(object):
             self.update_infobox("Fit complete!", yesno=False)
         except:
             self.update_infobox("Fit failed - check terminal output", yesno=False)
-            return
+            return [False, None]
 
         # Unpack all the ALIS fit, ready for storage in an instance of AbsorptionLines.
         res = self.unpack_alis_fits(result, lines)
@@ -899,6 +915,8 @@ class SelectRegions(object):
                 redshift_all[ll, ss] = np.mean(newzabs)
                 err_redshift_all[ll, ss] = np.std(newzabs)
         # TODO :: Not all lines appear in all data, so only some of redshift_all and err_redshift_all are actually needed - some are spurious.
+        # TODO :: when there's more lines than panels included in the fit, an error occurs
+        # TODO :: can't display residuals when a response is required.
 
         # Store the continuum fits
         self.model_cnt[:] = 1.0
@@ -918,7 +936,8 @@ class SelectRegions(object):
         resdict['redshift_all'] = redshift_all
         resdict['redshift_all_err'] = err_redshift_all
 
-        if True:
+        debug = False
+        if debug:
             np.save("work/fres_covar", fres.covar)
             np.save("work/inarr", inarr)
             np.save("work/redshift", redshift)
@@ -986,6 +1005,16 @@ class SelectRegions(object):
         # Check if any of the parameters have gone "out of bounds"
         return popt[0], popt[1], popt[2]
 
+    def check_absline_bounds(self, coldens, zabs, bval):
+        inbounds = True
+        if coldens < 8.0 or coldens > 22.0:
+            inbounds = False
+        if zabs < 0.0 or zabs > 7.0:
+            inbounds = False
+        if bval < 0.1 or bval > 100.0:
+            inbounds = False
+        return inbounds
+
     def goto(self, mouseidx, waveid=0):
         # Store the old values
         tmp_mn, tmp_mx = self.axs[0].get_xlim()
@@ -1049,7 +1078,8 @@ class SelectRegions(object):
                 self.specs[i].set_ydata(self.prop._flux)
             else:
                 # Otherwise, plot the residuals
-                self.specs[i].set_ydata(self.prop._flux/(self.model_cnv*self.model_act*self.model_cnt))
+                #self.specs[i].set_ydata(self.prop._flux/(self.model_cnv*self.model_act*self.model_cnt))
+                self.specs[i].set_ydata(self.resloc[0] + self.resloc[1] * (self.prop._flux - (self.model_cnv * self.model_act * self.model_upd * self.model_cnt))/self.prop._flue)
         self.canvas.draw()
         self.canvas.flush_events()
         self._resid = not resid
@@ -1059,6 +1089,7 @@ class SelectRegions(object):
             self.update_actors(axisID, clear=True)
         elif kind == 'update':
             self.lines_upd.clear()
+            self.model_cnt[:] = 1.0
             self._update_model = None  # lines_upd should no longer be plotted.
         # Update the plot
         self.update_plot()
@@ -1164,7 +1195,7 @@ class SelectRegions(object):
             #xmx = wcen * (1.0 + self.veld/299792.458)
             xmn, xmx = -self.veld, self.veld
             self.axs[i].set_xlim([xmn, xmx])
-            self.axs[i].set_ylim([-0.1, 1.1])
+            self.axs[i].set_ylim([-0.1, self.resloc[0]+3*self.resloc[1]])
         self.canvas.draw()
 
     def write_data(self):

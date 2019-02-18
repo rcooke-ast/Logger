@@ -16,6 +16,7 @@ if __name__ == '__main__':
     # How many lines of the Lyman series should be plotted, and over what (half) velocity interval
     nLyseries = 8  # Must be even
     velwin = 1500.0
+    rcen, rwid = 1.2, 0.05
 
     prop = fit_spectrum.Props(QSO("HS1700p6416"))
 
@@ -27,6 +28,15 @@ if __name__ == '__main__':
 
     fig, axs = plt.subplots(nrows=nLyseries//2, ncols=2, figsize=(16, 9), facecolor="white", sharex=True, sharey=True)
     axs = axs.T.flatten()
+
+    # First draw 1/2 sigma residuals bars
+    for i in range(nLyseries):
+        lam = Hlines[i]*(1.0+prop._zem)
+        velo = 299792.458*(prop._wave-lam)/lam
+        axs[i].fill_between(velo, rcen-2*rwid, rcen+2*rwid, facecolors='lightgrey')  # 2 sigma bar
+        axs[i].fill_between(velo, rcen-1*rwid, rcen+1*rwid, facecolors='darkgrey')  # 1 sigma bar
+
+    # Draw spectra and residuals
     specs = []
     for i in range(nLyseries):
         lam = Hlines[i]*(1.0+prop._zem)
@@ -44,6 +54,6 @@ if __name__ == '__main__':
     axi.set_xlim((0, 1))
     axi.set_ylim((0, 1))
 
-    reg = fit_spectrum.SelectRegions(fig.canvas, axs, axi, specs, prop, atom, vel=velwin, lines=Hlines[:nLyseries])
+    reg = fit_spectrum.SelectRegions(fig.canvas, axs, axi, specs, prop, atom, vel=velwin, lines=Hlines[:nLyseries], resid=[rcen, rwid])
 
     plt.show()
