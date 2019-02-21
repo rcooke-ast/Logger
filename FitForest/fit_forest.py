@@ -16,7 +16,7 @@ if __name__ == '__main__':
     # How many lines of the Lyman series should be plotted, and over what (half) velocity interval
     nLyseries = 8  # Must be even
     velwin = 1500.0
-    rcen, rwid = 1.2, 0.05
+    rcen, rwid = 1.0, 0.05
 
     prop = fit_spectrum.Props(QSO("HS1700p6416"))
 

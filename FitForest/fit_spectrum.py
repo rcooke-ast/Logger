@@ -254,7 +254,7 @@ class SelectRegions(object):
                 self.modelCont_upd[i].pop(0).remove()
                 self.modelCont_upd[i] = None
         # Generate the model curve for the actors
-        self.model_upd = np.ones(self.prop._wave.size)
+        self.model_upd = self.model_cnt.copy()
         # If not currently updating, return
         if self._update_model is None:
             self.canvas.draw()
@@ -432,7 +432,7 @@ class SelectRegions(object):
             self._qconf = False
 
         # Manage responses from questions posed to the user.
-        if self._respreq[0]:
+        if self._respreq[0] and key not in ['r']:  # We still want to toggle residuals when a response is required
             if key != "y" and key != "n":
                 return
             else:
@@ -727,6 +727,7 @@ class SelectRegions(object):
     def fit_alis(self, nextra=50):
         # First store the data that will be needed in the analysis
         lines = []
+        wavrng = []
         for axisID in range(self.naxis):
             # Find all regions
             regwhr = np.copy(self.actors[axisID] == 1)
@@ -734,8 +735,6 @@ class SelectRegions(object):
             lpix = np.where((self.actors[axisID][:-1] == 0) & (self.actors[axisID][1:] == 1))
             regwhr[lpix] = True
             if np.sum(regwhr != 0):
-                # Store this as a line that needs to be included in the fit
-                lines += [axisID]
                 # Find the endpoints
                 rpixend = np.max(np.where((self.actors[axisID][:-1] == 1) & (self.actors[axisID][1:] == 0))[0])
                 lpixend = np.min(lpix[0])
@@ -753,6 +752,9 @@ class SelectRegions(object):
                 if not os.path.exists("tempdata"):
                     os.mkdir("tempdata")
                 np.savetxt("tempdata/data_{0:02d}.dat".format(axisID), np.transpose((wave, flux, flue, fito, cont)))
+                # Save some information about this data
+                lines += [axisID]  # Store that this line must be included in the fit
+                wavrng.append([wave[0], wave[-1]])  # The wavelength range of the data
             elif axisID == 0:
                 self.update_infobox("You must include fitting data in the top left (i.e. Lya) panel", yesno=False)
                 return [False, None]
@@ -762,10 +764,10 @@ class SelectRegions(object):
         # Get the ALIS parameter, data, and model lines
         parlines = self.lines_act.alis_parlines(name=self.prop._qsoname)
         datlines = self.lines_act.alis_datlines(lines, res=self.prop._vfwhm)
-        modlines = self.lines_act.alis_modlines(lines)
+        modlines = self.lines_act.alis_modlines(self.lines, lines, wavrng)
 
         # Some testing to check the ALIS file is being constructed correctly
-        writefile = False
+        writefile = True
         if writefile:
             fil = open("tempdata/testfile.mod", 'w')
             fil.write("\n".join(parlines) + "\n\n")
@@ -787,12 +789,15 @@ class SelectRegions(object):
 
         # Plot best-fitting model and residuals (send to lines_upd)
         nlines = res['coldens'].size
+        self.lines_upd.clear()
         for ll in range(nlines):
             errs = [res['coldens_err'][ll], res['redshift_err'][ll], res['bval_err'][ll]]
             self.lines_upd.add_absline(res['coldens'][ll], res['redshift'][ll], res['bval'][ll], res['label'][ll],
                                        errs=errs, shifts=res['redshift_all'], err_shifts=res['redshift_all_err'])
+        print(res['redshift_all'])
+        print(res['redshift_all_err'])
         self._update_model = ['f']
-        self.draw_model_update()
+        self.update_plot()
         # Clean up (delete the data used in the fitting)
         if not writefile:
             rmtree("tempdata")
@@ -810,10 +815,8 @@ class SelectRegions(object):
         info = [(result._tend - result._tstart)/3600.0, fres.fnorm, fres.dof, fres.niter, fres.status]
         alis_lines = get_alis_string(result, fres.params, fres.perror, info,
                                      printout=False, getlines=True, save=False)
-        #print(alis_lines)
 
-        # Extract parameter values and continuum
-        self.lines_upd.clear()   # Start by clearing the update lines, just in case.
+        # Extract parameter values and the continuum
         # Scan through the model to find the velocity shifts of each portion of spectrum
         vshift, err_vshift = [], []
         for ll in range(len(lines)):
@@ -821,24 +824,24 @@ class SelectRegions(object):
             if lines[ll] == 0:
                 vshift += [0.0]
                 err_vshift += [0.0]
-            else:
-                shtxt = "shift{0:02d}".format(lines[ll])
-                # Search through alis_lines for the appropriate string
-                alspl = alis_lines.split("\n")
-                cntr = 0
-                for spl in range(len(alspl)):
-                    if "# Shift Models:" in alspl[spl]:
-                        flag = True
-                        continue
-                    if flag:
-                        if shtxt in alspl[spl]:
-                            vspl = alspl[spl].split()[2]
-                            if cntr == 0:
-                                vshift += [float(vspl.split("s")[0])]
-                                cntr += 1
-                            elif cntr == 1:
-                                err_vshift += [float(vspl.split("s")[0])]
-                                break
+                continue
+            shtxt = "shift{0:02d}".format(lines[ll])
+            # Search through alis_lines for the appropriate string
+            alspl = alis_lines.split("\n")
+            cntr = 0
+            for spl in range(len(alspl)):
+                if "# Shift Models:" in alspl[spl]:
+                    flag = True
+                    continue
+                if flag:
+                    if shtxt in alspl[spl]:
+                        vspl = alspl[spl].split()[2]
+                        if cntr == 0:
+                            vshift += [float(vspl.split("s")[0])]
+                            cntr += 1
+                        elif cntr == 1:
+                            err_vshift += [float(vspl.split("s")[0])]
+                            break
         # Convert to numpy arrays
         vshift = np.array(vshift)
         err_vshift = np.array(err_vshift)
@@ -850,44 +853,47 @@ class SelectRegions(object):
         redshift_all, err_redshift_all = np.zeros((nlines, vshift.size)), np.zeros((nlines, vshift.size))
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
         label = []
-        flag = 0
-        for ll in range(nlines):
-            # Search through alis_lines for the appropriate string
-            alspl = alis_lines.split("\n")
-            for spl in range(len(alspl)):
-                if " absorption" in alspl[spl]:
-                    # Values
-                    flag = 1
-                    cntr = 0
-                    continue
-                elif "model end" in alspl[spl]:
-                    flag = 0
-                elif "#absorption" in alspl[spl]:
-                    # Errors
-                    flag = 2
-                    cntr = 0
-                    continue
-                elif len(alspl[spl].strip()) == 0:
-                    # An empty line
-                    flag = 0
-                # Extract the line profile information
-                if flag == 1:
-                    if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
-                        vspl = alspl[spl].split()
-                        label += [vspl[1].split("=")[1]]
-                        coldens[cntr] = float(vspl[2].split("n")[0])
-                        redshift[cntr] = float(vspl[3].split("z")[0])
-                        bval[cntr] = float(vspl[4].split("b")[0])
-                        redshift_all += [np.zeros(vshift.size)]
-                        cntr += 1
-                elif flag == 2:
-                    if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
-                        vspl = alspl[spl].split()
-                        err_coldens[cntr] = float(vspl[3].split("n")[0])
-                        err_redshift[cntr] = float(vspl[4].split("z")[0])
-                        err_bval[cntr] = float(vspl[5].split("b")[0])
-                        err_redshift_all += [np.zeros(vshift.size)]
-                        cntr += 1
+        alspl = alis_lines.split("\n")
+        for ll in range(len(lines)):
+            flag = 0
+            for xx in range(nlines):
+                # Search through alis_lines for the appropriate string
+                for spl in range(len(alspl)):
+                    if " absorption" in alspl[spl]:
+                        # Values
+                        flag = 1
+                        cntr = 0
+                        continue
+                    elif "model end" in alspl[spl]:
+                        flag = 0
+                        continue
+                    elif "#absorption" in alspl[spl]:
+                        # Errors
+                        flag = 2
+                        cntr = 0
+                        continue
+                    elif len(alspl[spl].strip()) == 0:
+                        # An empty line
+                        flag = 0
+                        continue
+                    # Extract the line profile information
+                    if flag == 1:
+                        if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
+                            vspl = alspl[spl].split()
+                            label += [vspl[1].split("=")[1]]
+                            coldens[cntr] = float(vspl[2].split("n")[0])
+                            redshift[cntr] = float(vspl[3].split("z")[0])
+                            bval[cntr] = float(vspl[4].split("b")[0])
+                            redshift_all += [np.zeros(vshift.size)]
+                            cntr += 1
+                    elif flag == 2:
+                        if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
+                            vspl = alspl[spl].split()
+                            err_coldens[cntr] = float(vspl[3].split("n")[0])
+                            err_redshift[cntr] = float(vspl[4].split("z")[0])
+                            err_bval[cntr] = float(vspl[5].split("b")[0])
+                            err_redshift_all += [np.zeros(vshift.size)]
+                            cntr += 1
 
         # Generate a new set of starting parameters
         ptb = newstart(fres.covar, numsims)
@@ -914,11 +920,12 @@ class SelectRegions(object):
                 newzabs = (1.0 + ptrbvals[0, :]) / (1.0 - ptrbvals[1, :] / 299792.458) - 1.0  # This has been explicitly checked
                 redshift_all[ll, ss] = np.mean(newzabs)
                 err_redshift_all[ll, ss] = np.std(newzabs)
-        # TODO :: Not all lines appear in all data, so only some of redshift_all and err_redshift_all are actually needed - some are spurious.
-        # TODO :: when there's more lines than panels included in the fit, an error occurs
-        # TODO :: can't display residuals when a response is required.
+        # TODO :: The redshift_all (and error) information is not extracted correctly.
+        # I haven't yet checked if coldens/redshift/bval info has been extracted correctly.
+        # However, the model file appears to be generated correctly.
 
         # Store the continuum fits
+        # TODO :: continuum is lost when accepting a fit
         self.model_cnt[:] = 1.0
         for cc in range(len(result._contfinal)):
             val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
@@ -1079,7 +1086,15 @@ class SelectRegions(object):
             else:
                 # Otherwise, plot the residuals
                 #self.specs[i].set_ydata(self.prop._flux/(self.model_cnv*self.model_act*self.model_cnt))
-                self.specs[i].set_ydata(self.resloc[0] + self.resloc[1] * (self.prop._flux - (self.model_cnv * self.model_act * self.model_upd * self.model_cnt))/self.prop._flue)
+                if self._update_model is None:
+                    # If a model is not being updated, show the ratio
+                    self.specs[i].set_ydata(self.prop._flux / (self.model_cnv * self.model_act))
+                else:
+                    if self._update_model[0] == 'f':
+                        # A fit from ALIS is being shown, so show the updated model
+                        self.specs[i].set_ydata(self.resloc[0] + self.resloc[1] * (self.prop._flux - (self.model_cnv * self.model_upd))/self.prop._flue)
+                    else:
+                        self.specs[i].set_ydata(self.resloc[0] + self.resloc[1] * (self.prop._flux - (self.model_cnv * self.model_act)) / self.prop._flue)
         self.canvas.draw()
         self.canvas.flush_events()
         self._resid = not resid
@@ -1125,6 +1140,7 @@ class SelectRegions(object):
             for i in range(self.naxis):
                 self.actors[i][:] = 0
                 self.lactor[:] = 0
+                self.lines_act.clear()
             return
         else:
             start, end, addsub = locs[0], locs[1], locs[2]
@@ -1271,18 +1287,21 @@ class AbsorptionLines:
             datlines += ["tempdata/data_{0:02d}.dat  specid=line{0:02d}  fitrange=columns  loadrange=all  resolution=vfwhm({1:.3f}RFIX) shift=vshift({2:s}) columns=[wave:0,flux:1,error:2,fitrange:3,continuum:4]".format(line, res, shtxt)]
         return datlines
 
-    def alis_modlines(self, lines):
+    def alis_modlines(self, lines, lineIDs, wavrng):
         modlines = []
         # Do the emission
         modlines += ["emission"]
-        for axID in lines:
+        for axID in lineIDs:
             modlines += ["legendre  1.0 0.0 0.0 0.0  scale=1.0,1.0,1.0,1.0  specid=line{0:02d}".format(axID)]
         # Do the absorption
         modlines += ["absorption"]
         for ll in range(self.size):
-            for axID in lines:
-                modlines += ["voigt ion={0:s}  {1:.4f}n{4:d}  {2:.9f}z{4:d}  {3:.3f}b{4:d}  0.0TFIX  specid=line{5:02d}".format(
-                    self.label[ll], self.coldens[ll], self.redshift[ll], self.bval[ll], ll, axID)]
+            for axID in lineIDs:
+                for lin in range(lines.size):
+                    wavtst = (1.0+self.redshift[ll])*lines[lin]
+                    if wavrng[axID][0] <= wavtst <= wavrng[axID][1]:
+                        modlines += ["voigt ion={0:s}  {1:.4f}n{4:d}  {2:.9f}z{4:d}  {3:.3f}b{4:d}  0.0TFIX  specid=line{5:02d}".format(
+                                    self.label[ll], self.coldens[ll], self.redshift[ll], self.bval[ll], ll, axID)]
         return modlines
 
     def alis_parlines(self, name="quasarname", basic=True):
