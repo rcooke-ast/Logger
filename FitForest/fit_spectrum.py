@@ -854,15 +854,14 @@ class SelectRegions(object):
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
         label = []
         alspl = alis_lines.split("\n")
-        for ll in range(len(lines)):
+        for xx in range(nlines):
             flag = 0
-            for xx in range(nlines):
+            for ll in range(len(lines)):
                 # Search through alis_lines for the appropriate string
                 for spl in range(len(alspl)):
                     if " absorption" in alspl[spl]:
                         # Values
                         flag = 1
-                        cntr = 0
                         continue
                     elif "model end" in alspl[spl]:
                         flag = 0
@@ -870,7 +869,6 @@ class SelectRegions(object):
                     elif "#absorption" in alspl[spl]:
                         # Errors
                         flag = 2
-                        cntr = 0
                         continue
                     elif len(alspl[spl].strip()) == 0:
                         # An empty line
@@ -880,20 +878,20 @@ class SelectRegions(object):
                     if flag == 1:
                         if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                             vspl = alspl[spl].split()
-                            label += [vspl[1].split("=")[1]]
-                            coldens[cntr] = float(vspl[2].split("n")[0])
-                            redshift[cntr] = float(vspl[3].split("z")[0])
-                            bval[cntr] = float(vspl[4].split("b")[0])
-                            redshift_all += [np.zeros(vshift.size)]
-                            cntr += 1
+                            if vspl[2].split("n")[1] == str(xx):
+                                label += [vspl[1].split("=")[1]]
+                                coldens[xx] = float(vspl[2].split("n")[0])
+                                redshift[xx] = float(vspl[3].split("z")[0])
+                                bval[xx] = float(vspl[4].split("b")[0])
+                                redshift_all += [np.zeros(vshift.size)]
                     elif flag == 2:
                         if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                             vspl = alspl[spl].split()
-                            err_coldens[cntr] = float(vspl[3].split("n")[0])
-                            err_redshift[cntr] = float(vspl[4].split("z")[0])
-                            err_bval[cntr] = float(vspl[5].split("b")[0])
-                            err_redshift_all += [np.zeros(vshift.size)]
-                            cntr += 1
+                            if vspl[3].split("n")[1] == str(xx):
+                                err_coldens[xx] = float(vspl[3].split("n")[0])
+                                err_redshift[xx] = float(vspl[4].split("z")[0])
+                                err_bval[xx] = float(vspl[5].split("b")[0])
+                                err_redshift_all += [np.zeros(vshift.size)]
 
         # Generate a new set of starting parameters
         ptb = newstart(fres.covar, numsims)
@@ -921,8 +919,13 @@ class SelectRegions(object):
                 redshift_all[ll, ss] = np.mean(newzabs)
                 err_redshift_all[ll, ss] = np.std(newzabs)
         # TODO :: The redshift_all (and error) information is not extracted correctly.
-        # I haven't yet checked if coldens/redshift/bval info has been extracted correctly.
-        # However, the model file appears to be generated correctly.
+        # Somehow need to remove the incorrect information. Maybe count up the total
+        # number of lines in the for loop on line 857, and don't predefine the number
+        # of elements to put in the redshift_all (and err) array? Then the above for
+        # loop needs to have the limits updated.
+        # TODO :: ANSWER:: redshift_all[xx] = np.append(redshift_all[xx], 0.0)
+        # The above will give the right number of lines.
+
 
         # Store the continuum fits
         # TODO :: continuum is lost when accepting a fit
@@ -943,7 +946,7 @@ class SelectRegions(object):
         resdict['redshift_all'] = redshift_all
         resdict['redshift_all_err'] = err_redshift_all
 
-        debug = False
+        debug = True
         if debug:
             np.save("work/fres_covar", fres.covar)
             np.save("work/inarr", inarr)
