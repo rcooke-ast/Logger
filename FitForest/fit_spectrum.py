@@ -849,10 +849,11 @@ class SelectRegions(object):
         redshift_all = [np.array([]) for xx in range(nlines)]
         err_redshift_all = [np.array([]) for xx in range(nlines)]
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
-        label = []
+        label = [[] for xx in range(nlines)]
         alspl = alis_lines.split("\n")
         for xx in range(nlines):
             flag = 0
+            linlab = 0
             for ll in range(len(lines)):
                 # Search through alis_lines for the appropriate string
                 for spl in range(len(alspl)):
@@ -876,12 +877,18 @@ class SelectRegions(object):
                         if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                             vspl = alspl[spl].split()
                             if vspl[2].split("n")[1] == str(xx):
-                                # TODO : Insert label here of the type of line it is (i.e. Lya, Lyb, Lyg, metal)
-                                label += [vspl[1].split("=")[1]]
+                                # TODO :: Label is wrong.
+                                # This needs a total overhaul of the code.
+                                # I think every individual absorption line needs to be saved, and separately fit
+                                # That way, right from the beginning, each line has a label.
+                                # Then, the user can choose which lines are included in the ALIS fit.
+                                # While this is being done, we might also want to layer the data that are being saved.
+                                label[xx] += ["{0:s} {1:s}".format(vspl[1].split("=")[1], str(self.lines[lines[ll]]))]
                                 coldens[xx] = float(vspl[2].split("n")[0])
                                 redshift[xx] = float(vspl[3].split("z")[0])
                                 bval[xx] = float(vspl[4].split("b")[0])
                                 redshift_all[xx] = np.append(redshift_all[xx], vshift[lines[ll]])
+                                linlab += 1
                     elif flag == 2:
                         if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                             vspl = alspl[spl].split()
@@ -926,7 +933,7 @@ class SelectRegions(object):
             self.model_cnt[val[0][ww]] *= result._contfinal[cc][ww]
 
         # Store everything compactly in a dictionary
-        resdict['label'] = deepcopy(self.lines_act.label)
+        resdict['label'] = deepcopy(label)
         resdict['coldens'] = coldens
         resdict['coldens_err'] = err_coldens
         resdict['redshift'] = redshift
@@ -1289,10 +1296,10 @@ class AbsorptionLines:
         # Do the absorption
         modlines += ["absorption"]
         for ll in range(self.size):
-            for axID in lineIDs:
+            for xx, axID in enumerate(lineIDs):
                 for lin in range(lines.size):
                     wavtst = (1.0+self.redshift[ll])*lines[lin]
-                    if wavrng[axID][0] <= wavtst <= wavrng[axID][1]:
+                    if wavrng[xx][0] <= wavtst <= wavrng[xx][1]:
                         modlines += ["voigt ion={0:s}  {1:.4f}n{4:d}  {2:.9f}z{4:d}  {3:.3f}b{4:d}  0.0TFIX  specid=line{5:02d}".format(
                                     self.label[ll], self.coldens[ll], self.redshift[ll], self.bval[ll], ll, axID)]
         return modlines
