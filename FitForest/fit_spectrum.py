@@ -916,11 +916,6 @@ class SelectRegions(object):
                 newzabs = (1.0 + ptrbvals[0, :]) / (1.0 - ptrbvals[1, :] / 299792.458) - 1.0  # This has been explicitly checked
                 redshift_all[xx][ss] = np.mean(newzabs)
                 err_redshift_all[xx][ss] = np.std(newzabs)
-        # TODO :: The redshift_all (and error) information is not extracted correctly.
-        # Somehow need to remove the incorrect information. Maybe count up the total
-        # number of lines in the for loop on line 857, and don't predefine the number
-        # of elements to put in the redshift_all (and err) array? Then the above for
-        # loop needs to have the limits updated.
 
         # Store the continuum fits
         # TODO :: continuum is lost when accepting a fit
