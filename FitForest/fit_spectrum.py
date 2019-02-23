@@ -793,9 +793,7 @@ class SelectRegions(object):
         for ll in range(nlines):
             errs = [res['coldens_err'][ll], res['redshift_err'][ll], res['bval_err'][ll]]
             self.lines_upd.add_absline(res['coldens'][ll], res['redshift'][ll], res['bval'][ll], res['label'][ll],
-                                       errs=errs, shifts=res['redshift_all'], err_shifts=res['redshift_all_err'])
-        print(res['redshift_all'])
-        print(res['redshift_all_err'])
+                                       errs=errs, shifts=res['redshift_all'][ll], err_shifts=res['redshift_all_err'][ll])
         self._update_model = ['f']
         self.update_plot()
         # Clean up (delete the data used in the fitting)
@@ -878,6 +876,7 @@ class SelectRegions(object):
                         if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                             vspl = alspl[spl].split()
                             if vspl[2].split("n")[1] == str(xx):
+                                # TODO : Insert label here of the type of line it is (i.e. Lya, Lyb, Lyg, metal)
                                 label += [vspl[1].split("=")[1]]
                                 coldens[xx] = float(vspl[2].split("n")[0])
                                 redshift[xx] = float(vspl[3].split("z")[0])
