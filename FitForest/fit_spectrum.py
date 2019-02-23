@@ -818,12 +818,13 @@ class SelectRegions(object):
 
         # Extract parameter values and the continuum
         # Scan through the model to find the velocity shifts of each portion of spectrum
-        vshift, err_vshift = [], []
+        vshift = np.zeros(len(lines))
+        err_vshift = np.zeros(len(lines))
         for ll in range(len(lines)):
             flag = False
             if lines[ll] == 0:
-                vshift += [0.0]
-                err_vshift += [0.0]
+                vshift[lines[ll]] = 0.0
+                err_vshift[lines[ll]] = 0.0
                 continue
             shtxt = "shift{0:02d}".format(lines[ll])
             # Search through alis_lines for the appropriate string
@@ -837,20 +838,18 @@ class SelectRegions(object):
                     if shtxt in alspl[spl]:
                         vspl = alspl[spl].split()[2]
                         if cntr == 0:
-                            vshift += [float(vspl.split("s")[0])]
+                            vshift[lines[ll]] = float(vspl.split("s")[0])
                             cntr += 1
                         elif cntr == 1:
-                            err_vshift += [float(vspl.split("s")[0])]
+                            err_vshift[lines[ll]] = float(vspl.split("s")[0])
                             break
-        # Convert to numpy arrays
-        vshift = np.array(vshift)
-        err_vshift = np.array(err_vshift)
 
         # Extract absorption line parameters and their errors
         nlines = self.lines_act.size
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
         redshift, err_redshift = np.zeros(nlines), np.zeros(nlines)
-        redshift_all, err_redshift_all = np.zeros((nlines, vshift.size)), np.zeros((nlines, vshift.size))
+        redshift_all = [np.array([]) for xx in range(nlines)]
+        err_redshift_all = [np.array([]) for xx in range(nlines)]
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
         label = []
         alspl = alis_lines.split("\n")
@@ -883,7 +882,7 @@ class SelectRegions(object):
                                 coldens[xx] = float(vspl[2].split("n")[0])
                                 redshift[xx] = float(vspl[3].split("z")[0])
                                 bval[xx] = float(vspl[4].split("b")[0])
-                                redshift_all += [np.zeros(vshift.size)]
+                                redshift_all[xx] = np.append(redshift_all[xx], vshift[lines[ll]])
                     elif flag == 2:
                         if "specid=line{0:02d}".format(lines[ll]) in alspl[spl]:
                             vspl = alspl[spl].split()
@@ -891,7 +890,7 @@ class SelectRegions(object):
                                 err_coldens[xx] = float(vspl[3].split("n")[0])
                                 err_redshift[xx] = float(vspl[4].split("z")[0])
                                 err_bval[xx] = float(vspl[5].split("b")[0])
-                                err_redshift_all += [np.zeros(vshift.size)]
+                                err_redshift_all[xx] = np.append(err_redshift_all[xx], 0.0)
 
         # Generate a new set of starting parameters
         ptb = newstart(fres.covar, numsims)
@@ -902,30 +901,27 @@ class SelectRegions(object):
 
         # Take into account covariance between the velocity shift and redshift
         idx, pidx = np.zeros(2, dtype=np.int), np.zeros(2, dtype=np.int)
-        for ll in range(nlines):
+        for xx in range(nlines):
             # For each cloud
-            lmin = np.argmin(np.abs(inarr - redshift[ll]))
+            lmin = np.argmin(np.abs(inarr - redshift[xx]))
             idx[0] = lmin
             pidx[0] = cntr[lmin]
-            for ss in range(vshift.size):
+            for ss in range(redshift_all[xx].size):
                 # For each Lyman series absorption line
-                smin = np.argmin(np.abs(inarr - vshift[ss]))
+                smin = np.argmin(np.abs(inarr - redshift_all[xx][ss]))
                 idx[1] = smin
                 pidx[1] = cntr[smin]
                 # Calculate the perturbed values
                 ptrbvals = np.outer(inarr[idx], np.ones(numsims)) + ptb[pidx, :]
                 # Determine the redshift of the line (take into account the vshift) and store the result
                 newzabs = (1.0 + ptrbvals[0, :]) / (1.0 - ptrbvals[1, :] / 299792.458) - 1.0  # This has been explicitly checked
-                redshift_all[ll, ss] = np.mean(newzabs)
-                err_redshift_all[ll, ss] = np.std(newzabs)
+                redshift_all[xx][ss] = np.mean(newzabs)
+                err_redshift_all[xx][ss] = np.std(newzabs)
         # TODO :: The redshift_all (and error) information is not extracted correctly.
         # Somehow need to remove the incorrect information. Maybe count up the total
         # number of lines in the for loop on line 857, and don't predefine the number
         # of elements to put in the redshift_all (and err) array? Then the above for
         # loop needs to have the limits updated.
-        # TODO :: ANSWER:: redshift_all[xx] = np.append(redshift_all[xx], 0.0)
-        # The above will give the right number of lines.
-
 
         # Store the continuum fits
         # TODO :: continuum is lost when accepting a fit
@@ -963,8 +959,8 @@ class SelectRegions(object):
                 print(resdict['redshift_err'][ll])
                 print(resdict['bval'][ll])
                 print(resdict['bval_err'][ll])
-                print(resdict['redshift_all'][ll,:])
-                print(resdict['redshift_all_err'][ll,:])
+                print(resdict['redshift_all'][ll][:])
+                print(resdict['redshift_all_err'][ll][:])
                 print("-----------------")
 
         # Return the dictionary
