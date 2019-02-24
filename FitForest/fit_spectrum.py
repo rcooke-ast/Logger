@@ -194,8 +194,12 @@ class SelectRegions(object):
         for i in range(self.naxis):
             lam = self.lines[i] * (1.0 + self._zqso)
             for j in range(self.lines_act.size):
-                velo = 299792.458 * (self.lines[i] * (1.0 + self.lines_act.redshift[j]) - lam) / lam
-                self.annlines.append(self.axs[i].axvline(velo, color='r'))
+                for k in range(len(self.lines_act.fitidx[j])):
+                    col = 'r'
+                    if self.lines_act.fitidx[j][k] != -1:
+                        col = 'b'
+                    velo = 299792.458 * (self.lines[k] * (1.0 + self.lines_act.redshift[j]) - lam) / lam
+                    self.annlines.append(self.axs[i].axvline(velo, color=col))
         return
 
         #annotations = [child for child in self.ax.get_children() if isinstance(child, matplotlib.text.Annotation)]
@@ -585,7 +589,7 @@ class SelectRegions(object):
             if autosave: self.autosave('ul', axisID, mouseidx, params=params)
             self._fitchng = True
         elif key == 'uli':
-            # TODO :: Do something here when mouse button is clicked
+            self.toggle_fitidx(self.prop._wave[params[0]], self.lines, params[1])
             if autosave: self.autosave('uli', axisID, mouseidx, params=params)
             self._fitchng = True
         elif key == 'ulc':
@@ -698,15 +702,19 @@ class SelectRegions(object):
     def add_absline(self, axisID, mouseidx, kind=None):
         # Take the rest wavelength directly from the panel (unless kind is specified)
         wave0 = self.lines[axisID]
-        label = self.lines_act.auto_label(self.lines)
+        zp1 = self.prop._wave[mouseidx] / wave0
+        wlin = np.where(self.lines > np.min(self.prop._wave) / zp1)
+        label = self.lines_act.auto_label(self.lines[wlin])
         if kind == 'lya':
             # Use H I Lyman alpha
             wave0 = 1215.6701
-            label = self.lines_act.auto_label(self.lines)
+            zp1 = self.prop._wave[mouseidx] / wave0
+            wlin = np.where(self.lines > np.min(self.prop._wave) / zp1)
+            label = self.lines_act.auto_label(self.lines[wlin])
         elif kind == 'metal':
             # An example metal line
             wave0 = 1670.78861
-            label = ["27Al_II"]
+            label = ["27Al_II-{0:s}".format(str(wave0))]
         # Get a quick fit to estimate some parameters
         fitvals = self.fit_oneline(wave0, mouseidx)
         if fitvals is not None:
@@ -737,6 +745,7 @@ class SelectRegions(object):
         # First store the data that will be needed in the analysis
         lines = []
         wavrng = []
+        self.prep_alis_fits(nextra=nextra)
         for axisID in range(self.naxis):
             # Find all regions
             regwhr = np.copy(self.actors[axisID] == 1)
@@ -809,6 +818,47 @@ class SelectRegions(object):
         if not writefile:
             rmtree("tempdata")
         return [True, "fit_alis"]
+
+    def prep_alis_fits(self, nextra=50):
+        """
+        Define all of the data 'snips' and update the fitidx accordingly
+
+        Return:
+            wavidx : data indices to extract data.
+        """
+        # Find all fitting regions
+        allreg = np.zeros(self.prop._regions.size)
+        indarr = -1*np.ones(allreg.size)
+        for axisID in range(self.naxis):
+            # Find all regions
+            regwhr = np.copy(self.actors[axisID] == 1)
+            # Fudge to get the leftmost pixel shaded in too
+            lpix = np.where((self.actors[axisID][:-1] == 0) & (self.actors[axisID][1:] == 1))
+            regwhr[lpix] = True
+            allreg[regwhr] = 1
+
+        # Find where the gap between two fitted regions is more than 2*nextra pixels
+        lpix = np.where((allreg[:-1] == 0) & (allreg[1:] == 1))[0]
+        rpix = np.where((allreg[:-1] == 1) & (allreg[1:] == 0))[0]
+        wavidx = []
+        lpixend = lpix[0]
+        for tt in range(0, lpix.size-1):
+            if rpix[tt]+2*nextra < lpix[tt+1]:
+                # Too much space between fitted regions - store data values
+                rpixend = rpix[tt]
+                wavidx.append([lpixend - nextra - 1, rpixend + nextra])
+                lpixend = lpix[tt+1]
+            else:
+                # Still consider this to be the same fitted region
+                pass
+
+        # Now associate each of the absorption lines into one of the above snips
+        for tt in range(len(wavidx)):
+            wmin = self.prop._wave[wavidx[tt][0]]
+            wmax = self.prop._wave[wavidx[tt][1]]
+            self.lines_act.update_fitidx(tt, rng=[wmin, wmax])
+
+        return allreg, wavidx
 
     def unpack_alis_fits(self, result, lines, numsims=100000):
         """
@@ -935,6 +985,7 @@ class SelectRegions(object):
 
         # Store the continuum fits
         # TODO :: continuum is lost when accepting a fit
+        # TODO :: the master (i.e. blue) continuum is not included in the fit with ALIS (i.e. a bug in ALIS?)
         self.model_cnt[:] = 1.0
         for cc in range(len(result._contfinal)):
             val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
@@ -1086,6 +1137,11 @@ class SelectRegions(object):
 
     def lineinfo(self, mouseidx):
         self.lines_act.lineinfo(self.prop._wave[mouseidx], np.append(self.lines, 1670.78861))
+
+    def toggle_fitidx(self, west, lines, flip):
+        self.lines_act.toggle_fitidx(west, lines, flip)
+        self.draw_lines()
+        self.canvas.draw()
 
     def toggle_residuals(self, resid):
         for i in range(self.naxis):
@@ -1282,13 +1338,13 @@ class AbsorptionLines:
     def size(self):
         return self.coldens.size
 
-    def alis_datlines(self, lines, res=7.0):
+    def alis_datlines(self, lineIDS, res=7.0):
         """
         lines = list of integers indicating which lines are used in the fitting.
         res = instrument resolution in km/s
         """
         datlines = []
-        for line in lines:
+        for line in lineIDS:
             if line == 0:
                 shtxt = "0.0SFIX"
             else:
@@ -1305,12 +1361,13 @@ class AbsorptionLines:
         # Do the absorption
         modlines += ["absorption"]
         for ll in range(self.size):
+            ion = self.label[ll].split("-")[0]
             for xx, axID in enumerate(lineIDs):
                 for lin in range(lines.size):
                     wavtst = (1.0+self.redshift[ll])*lines[lin]
                     if wavrng[xx][0] <= wavtst <= wavrng[xx][1]:
                         modlines += ["voigt ion={0:s}  {1:.4f}n{4:d}  {2:.9f}z{4:d}  {3:.3f}b{4:d}  0.0TFIX  specid=line{5:02d}".format(
-                                    self.label[ll], self.coldens[ll], self.redshift[ll], self.bval[ll], ll, axID)]
+                                    ion, self.coldens[ll], self.redshift[ll], self.bval[ll], ll, axID)]
         return modlines
 
     def alis_parlines(self, name="quasarname", basic=True):
@@ -1349,10 +1406,10 @@ class AbsorptionLines:
             parlines += ["plot fits True"]
         return parlines
 
-    def auto_label(self, lines, ion="H I"):
-        return ["".format(ion, str(lines[ll]).split('.')[0]) for ll in range(len(lines))]
+    def auto_label(self, lines, ion="1H_I"):
+        return ["{0:s}-{1:s}".format(ion, str(lines[ll])) for ll in range(len(lines))]
 
-    def add_absline(self, coldens, redshift, bval, label, errs=None, shifts=None, err_shifts=None):
+    def add_absline(self, coldens, redshift, bval, label, fitidx=None, errs=None, shifts=None, err_shifts=None):
         # Add the values
         self.coldens = np.append(self.coldens, coldens)
         self.redshift = np.append(self.redshift, redshift)
@@ -1377,13 +1434,17 @@ class AbsorptionLines:
             print("OOPS - why is the code here!!")
             pass
         # Append the label
-        self.label += [label]
+        self.label.append(deepcopy(label))
+        if fitidx is None:
+            self.fitidx.append([-1]*len(label))
+        else:
+            self.fitidx.append(deepcopy(fitidx))
         return
 
     def add_absline_inst(self, inst, idx):
         errs = [inst.err_coldens[idx], inst.err_redshift[idx], inst.err_bval[idx]]
         self.add_absline(inst.coldens[idx], inst.redshift[idx], inst.bval[idx], inst.label[idx],
-                         errs=errs, shifts=inst.shifts[idx], err_shifts=inst.err_shifts[idx])
+                         fitidx=inst.fitidx[idx], errs=errs, shifts=inst.shifts[idx], err_shifts=inst.err_shifts[idx])
         return
 
     def clear(self):
@@ -1403,6 +1464,8 @@ class AbsorptionLines:
         self.err_shifts = []
         # A label
         self.label = []
+        # Which lines are included in the fit
+        self.fitidx = []
         return
 
     def copy(self, inst):
@@ -1419,6 +1482,8 @@ class AbsorptionLines:
         self.err_shifts = deepcopy(inst.err_shifts)
         # A label
         self.label = deepcopy(inst.label)
+        # Fit index
+        self.fitidx = deepcopy(inst.fitidx)
         return
 
     def delete_absline(self, west, lines):
@@ -1445,6 +1510,8 @@ class AbsorptionLines:
         del self.err_shifts[idx]
         # Delete the label
         del self.label[idx]
+        # Delete the fitidx
+        del self.fitidx[idx]
         return
 
     def find_closest(self, west, lines):
@@ -1456,13 +1523,26 @@ class AbsorptionLines:
         lidx, widx = int(idx[0]), int(idx[1])
         return lidx, widx
 
-    def getabs(self, idx, errs=False):
-        if errs:
-            return self.coldens[idx], self.redshift[idx], self.bval[idx],\
-                   self.err_coldens[idx], self.err_redshift[idx], self.err_bval[idx],\
-                   self.label[idx]
+    def toggle_fitidx(self, west, lines, flip):
+        """
+        west : The estimated wavelength of the line to be deleted from linelist 'lines'
+        flip : 0 to turn off fitidx, 1 to turn it on.
+        """
+        lidx, widx = self.find_closest(west, lines)
+        if flip == 0:
+            self.fitidx[widx][lidx] = -1
         else:
-            return self.coldens[idx], self.redshift[idx], self.bval[idx], self.label[idx]
+            self.fitidx[widx][lidx] = 0
+
+    def getabs(self, idx, errs=False):
+        # Return the values
+        retval = (self.coldens[idx], self.redshift[idx], self.bval[idx])
+        # and errors if requested
+        if errs:
+            retval += (self.err_coldens[idx], self.err_redshift[idx], self.err_bval[idx])
+        # Finally, include the label and fitidx
+        retval += (self.label[idx], self.fitidx[idx])
+        return retval
 
     def lineinfo(self, west, lines):
         """
@@ -1471,14 +1551,32 @@ class AbsorptionLines:
         lidx, widx = self.find_closest(west, lines)
         print("=======================================================")
         print("Line Information:")
-        print("  {0:s} {1:.2f}".format(self.label[widx], lines[lidx]))
+        print("  {0:s}".format(self.label[widx]))
         print("  Col Dens = {0:.3f} +/- {1:.3f}".format(self.coldens[widx], self.err_coldens[widx]))
         print("  Redshift = {0:.6f} +/- {1:.6f}".format(self.redshift[widx], self.err_redshift[widx]))
         print("  Dopp Par = {0:.2f} +/- {1:.2f}".format(self.bval[widx], self.err_bval[widx]))
         return
 
+    def update_fitidx(self, val, rng=None):
+        """
+        val = index to set
+        rng = two element list giving wave range allowed
+        """
+        if type(rng) is not list:
+            return  # Wrong type
+        if len(rng) != 2:
+            return  # Wrong size
+        # Update fitidx
+        for ll in range(self.size):
+            for ff in range(len(self.fitidx[ll])):
+                wv0 = float(self.label[ll][ff].split("-")[1])
+                wvtst = wv0 * (1.0+self.redshift[ll])
+                if rng[0] < wvtst < rng[1]:
+                    self.fitidx[ll][ff] = val
+        return
+
     def update_absline(self, indx, coldens=None, redshift=None, bval=None,
-                       errs=None, shifts=None, err_shifts=None, label=None):
+                       errs=None, shifts=None, err_shifts=None, label=None, fitidx=None):
         if coldens is not None:
             self.coldens[indx] = coldens
             if errs is not None:
@@ -1496,7 +1594,9 @@ class AbsorptionLines:
             if err_shifts is not None:
                 self.err_shifts[indx] = err_shifts.copy()
         if label is not None:
-            self.label[indx] = label
+            self.label[indx] = deepcopy(label)
+        if fitidx is not None:
+            self.fitidx[indx] = deepcopy(fitidx)
         return
 
     def write_data(self):
