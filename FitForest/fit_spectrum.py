@@ -745,7 +745,9 @@ class SelectRegions(object):
         # First store the data that will be needed in the analysis
         lines = []
         wavrng = []
-        self.prep_alis_fits(nextra=nextra)
+        allreg, wavidx = self.prep_alis_fits(nextra=nextra)
+        # TODO :: UP TO HERE - need to extract data, then set up appropriate datlines and modlines.
+        # Then, make sure everything fits and unpacks correctly!!
         for axisID in range(self.naxis):
             # Find all regions
             regwhr = np.copy(self.actors[axisID] == 1)
