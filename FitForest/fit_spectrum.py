@@ -404,9 +404,14 @@ class SelectRegions(object):
         if axisID is not None:
             if axisID < self.naxis:
                 self._end = self.get_ind_under_point(axisID, event.xdata)
-                # Now update the actors
-                self.operations('ua', axisID, self.mouseidx, params=[self._start, self._end, self._addsub])
-                self.plot_actor(axisID)
+                if self._end == self._start:
+                    # The mouse button was pressed (not dragged)
+                    self.operations('uli', axisID, self.mouseidx, params=[self._start, self._addsub])
+                else:
+                    # The mouse button was dragged
+                    # Now update the actors
+                    self.operations('ua', axisID, self.mouseidx, params=[self._start, self._end, self._addsub])
+                    self.plot_actor(axisID)
 
     def key_press_callback(self, event):
         """
@@ -453,7 +458,7 @@ class SelectRegions(object):
             self.update_infobox(default=True)
             return
 
-        # Used keys include:  abcdfgiklmnoprquwyz?[]<>-#123456789
+        # Used keys include:  abcdfgiklmnopqruwyz?[]<>-#123456789
         if key == '?':
             print("============================================================")
             print("       MAIN OPERATIONS")
@@ -579,6 +584,10 @@ class SelectRegions(object):
             self.update_absline(params=params)
             if autosave: self.autosave('ul', axisID, mouseidx, params=params)
             self._fitchng = True
+        elif key == 'uli':
+            # TODO :: Do something here when mouse button is clicked
+            if autosave: self.autosave('uli', axisID, mouseidx, params=params)
+            self._fitchng = True
         elif key == 'ulc':
             self.lines_act.copy(self.lines_upd)
             if autosave: self.autosave('ulc', axisID, mouseidx)
@@ -689,15 +698,15 @@ class SelectRegions(object):
     def add_absline(self, axisID, mouseidx, kind=None):
         # Take the rest wavelength directly from the panel (unless kind is specified)
         wave0 = self.lines[axisID]
-        label = "1H_I"
+        label = self.lines_act.auto_label(self.lines)
         if kind == 'lya':
             # Use H I Lyman alpha
             wave0 = 1215.6701
-            label = "1H_I"
+            label = self.lines_act.auto_label(self.lines)
         elif kind == 'metal':
             # An example metal line
             wave0 = 1670.78861
-            label = "27Al_II"
+            label = ["27Al_II"]
         # Get a quick fit to estimate some parameters
         fitvals = self.fit_oneline(wave0, mouseidx)
         if fitvals is not None:
@@ -1339,6 +1348,9 @@ class AbsorptionLines:
             parlines += ["plot fitregions True"]
             parlines += ["plot fits True"]
         return parlines
+
+    def auto_label(self, lines, ion="H I"):
+        return ["".format(ion, str(lines[ll]).split('.')[0]) for ll in range(len(lines))]
 
     def add_absline(self, coldens, redshift, bval, label, errs=None, shifts=None, err_shifts=None):
         # Add the values
