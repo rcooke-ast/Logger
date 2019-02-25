@@ -192,40 +192,47 @@ class SelectRegions(object):
         self.annlines = []
         self.anntexts = []
         for i in range(self.naxis):
-            lam = self.lines[i] * (1.0 + self._zqso)
             for j in range(self.lines_act.size):
                 for k in range(len(self.lines_act.fitidx[j])):
+                    # Determine the rest wavelength of the line
+                    wave0 = float(self.lines_act.label[j][k].split("-")[-1])
+                    lam = self.lines[i] * (1.0 + self._zqso)
+                    # Determine the redshift
+                    zabs = self.lines_act.redshift[j]
+                    if self.lines_act.shifts[j][k] != -1.0:
+                        zabs = self.lines_act.shifts[j][k]
+                    # Determine the color of the line
                     col = 'r'
                     if self.lines_act.fitidx[j][k] != -1:
                         col = 'b'
-                    velo = 299792.458 * (self.lines[k] * (1.0 + self.lines_act.redshift[j]) - lam) / lam
+                    velo = 299792.458 * (wave0 * (1.0 + zabs) - lam) / lam
                     self.annlines.append(self.axs[i].axvline(velo, color=col))
         return
 
-        #annotations = [child for child in self.ax.get_children() if isinstance(child, matplotlib.text.Annotation)]
-        for i in self.annlines: i.remove()
-        for i in self.anntexts: i.remove()
-        self.annlines = []
-        self.anntexts = []
-        for ax in self.axs:
-            # Plot the lines
-            xmn, xmx = ax.get_xlim()
-            ymn, ymx = ax.get_ylim()
-            xmn /= (1.0+self.prop._zem)
-            xmx /= (1.0+self.prop._zem)
-            w = np.where((self.atom._atom_wvl > xmn) & (self.atom._atom_wvl < xmx))[0]
-            for i in range(w.size):
-                dif = i%5
-                self.annlines.append(ax.axvline(self.atom._atom_wvl[w[i]]*(1.0+self.prop._zem), color='b'))
-                txt = "{0:s} {1:s} {2:.1f}".format(self.atom._atom_atm[w[i]],self.atom._atom_ion[w[i]],self.atom._atom_wvl[w[i]])
-                ylbl = ymn + (ymx-ymn)*(dif+1.5)/8.0
-                self.anntexts.append(ax.annotate(txt, (self.atom._atom_wvl[w[i]]*(1.0+self.prop._zem), ylbl), rotation=90.0, color='b', ha='center', va='bottom'))
-        return
+        # annotations = [child for child in self.ax.get_children() if isinstance(child, matplotlib.text.Annotation)]
+        # for i in self.annlines: i.remove()
+        # for i in self.anntexts: i.remove()
+        # self.annlines = []
+        # self.anntexts = []
+        # for ax in self.axs:
+        #     # Plot the lines
+        #     xmn, xmx = ax.get_xlim()
+        #     ymn, ymx = ax.get_ylim()
+        #     xmn /= (1.0+self.prop._zem)
+        #     xmx /= (1.0+self.prop._zem)
+        #     w = np.where((self.atom._atom_wvl > xmn) & (self.atom._atom_wvl < xmx))[0]
+        #     for i in range(w.size):
+        #         dif = i%5
+        #         self.annlines.append(ax.axvline(self.atom._atom_wvl[w[i]]*(1.0+self.prop._zem), color='b'))
+        #         txt = "{0:s} {1:s} {2:.1f}".format(self.atom._atom_atm[w[i]],self.atom._atom_ion[w[i]],self.atom._atom_wvl[w[i]])
+        #         ylbl = ymn + (ymx-ymn)*(dif+1.5)/8.0
+        #         self.anntexts.append(ax.annotate(txt, (self.atom._atom_wvl[w[i]]*(1.0+self.prop._zem), ylbl), rotation=90.0, color='b', ha='center', va='bottom'))
+        # return
 
     def draw_model(self):
-#        if self.lines_act.size == 0:
-            # There are no model lines
-#            return
+        # if self.lines_act.size == 0:
+        #     # There are no model lines
+        #     return
         for i in self.modelLines_act:
             if i is not None:
                 i.pop(0).remove()
@@ -235,10 +242,14 @@ class SelectRegions(object):
         # Generate the model curve for the actors
         self.model_act = np.ones(self.prop._wave.size)
         for i in range(self.lines_act.size):
-            for j in range(self.naxis):
-                p0, p1, p2 = self.lines_act.coldens[i], self.lines_act.redshift[i], self.lines_act.bval[i]
-                atidx = np.argmin(np.abs(self.lines[j]-self.atom._atom_wvl))
-                wv = self.lines[j]
+            for j in range(len(self.lines_act.shifts[i])):
+                zabs = self.lines_act.redshift[i]
+                wave0 = float(self.lines_act.label[i][j].split("-")[-1])
+                if self.lines_act.shifts[i][j] != -1.0:
+                    zabs = self.lines_act.shifts[i][j]
+                p0, p1, p2 = self.lines_act.coldens[i], zabs, self.lines_act.bval[i]
+                atidx = np.argmin(np.abs(wave0 - self.atom._atom_wvl))
+                wv = self.atom._atom_wvl[atidx]
                 fv = self.atom._atom_fvl[atidx]
                 gm = self.atom._atom_gam[atidx]
                 self.model_act *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
@@ -265,16 +276,14 @@ class SelectRegions(object):
             return
         # Calculate the model
         for i in range(self.lines_upd.size):
-            for j in range(self.naxis):
-                # TODO :: Anywhere a line is drawn, take into account the shifts
-                # or, store the redshift and error of each independent line in the shifts array
-                # This may require a model of the covariance between variables in fit_alis.
+            for j in range(len(self.lines_upd.shifts[i])):
                 zabs = self.lines_upd.redshift[i]
+                wave0 = float(self.lines_upd.label[i][j].split("-")[-1])
                 if self.lines_upd.shifts[i][j] != -1.0:
                     zabs = self.lines_upd.shifts[i][j]
                 p0, p1, p2 = self.lines_upd.coldens[i], zabs, self.lines_upd.bval[i]
-                atidx = np.argmin(np.abs(self.lines[j] - self.atom._atom_wvl))
-                wv = self.lines[j]
+                atidx = np.argmin(np.abs(wave0 - self.atom._atom_wvl))
+                wv = self.atom._atom_wvl[atidx]
                 fv = self.atom._atom_fvl[atidx]
                 gm = self.atom._atom_gam[atidx]
                 self.model_upd *= voigt(self.prop._wave, p0, p1, p2, wv, fv, gm)
@@ -727,7 +736,7 @@ class SelectRegions(object):
             coldens, zabs, bval = fitvals
             inbounds = self.check_absline_bounds(coldens, zabs, bval)
             if inbounds:
-                self.lines_act.add_absline(coldens, zabs, bval, label, shifts=self.lines.size)
+                self.lines_act.add_absline(coldens, zabs, bval, label, shifts=len(label))
                 self.draw_lines()
                 self.draw_model()
             else:
@@ -1425,8 +1434,8 @@ class AbsorptionLines:
             self.err_bval = np.append(self.err_bval, errs[2])
         # Append the shifts and errors
         if type(shifts) is int:
-            self.shifts += [0.0]*shifts
-            self.err_shifts += [0.0]*shifts
+            self.shifts.append(-1*np.ones(shifts))
+            self.err_shifts.append(-1*np.ones(shifts))
         elif type(shifts) is np.ndarray and type(err_shifts) is np.ndarray:
             self.shifts.append(shifts.copy())
             self.err_shifts.append(err_shifts.copy())
