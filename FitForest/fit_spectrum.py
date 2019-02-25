@@ -903,8 +903,6 @@ class SelectRegions(object):
                             err_vshift[snp] = float(vspl.split("s")[0])
                             break
 
-        print(vshift)
-
         # Extract absorption line parameters and their errors
         nlines = self.lines_act.size
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
