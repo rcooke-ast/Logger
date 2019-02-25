@@ -903,6 +903,8 @@ class SelectRegions(object):
                             err_vshift[snp] = float(vspl.split("s")[0])
                             break
 
+        print(vshift)
+
         # Extract absorption line parameters and their errors
         nlines = self.lines_act.size
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
@@ -949,7 +951,7 @@ class SelectRegions(object):
                                 coldens[ll] = float(vspl[2].split("n")[0])
                                 redshift[ll] = float(vspl[3].split("z")[0])
                                 bval[ll] = float(vspl[4].split("b")[0])
-                                redshift_all[ll][snp] = vshift[snp]
+                                redshift_all[ll][snp] = vshift[self.lines_act.fitidx[ll][snp]]
                     elif flag == 2:
                         if "specid=line{0:02d}".format(self.lines_act.fitidx[ll][snp]) in alspl[spl]:
                             vspl = alspl[spl].split()
@@ -1438,14 +1440,14 @@ class AbsorptionLines:
             self.shifts.append(shifts.copy())
             self.err_shifts.append(err_shifts.copy())
         else:
-            print("OOPS - why is the code here!!")
-            pass
+            self.shifts.append(-1*np.ones(len(label)))
+            self.err_shifts.append(-1*np.ones(len(label)))
         # Append the label
         self.label.append(deepcopy(label))
         if fitidx is None:
-            self.fitidx.append([-1]*len(label))
+            self.fitidx.append(-1*np.ones(len(label), dtype=np.int))
         else:
-            self.fitidx.append(deepcopy(fitidx))
+            self.fitidx.append(fitidx.copy())
         return
 
     def add_absline_inst(self, inst, idx):
