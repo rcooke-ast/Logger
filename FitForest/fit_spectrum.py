@@ -988,8 +988,7 @@ class SelectRegions(object):
                 err_redshift_all[ll][ss] = np.std(newzabs)
 
         # Store the continuum fits
-        # TODO :: continuum is lost when accepting a fit
-        # TODO :: the master (i.e. blue) continuum is not included in the fit with ALIS (i.e. a bug in ALIS?)
+        # TODO :: continuum is lost when accepting a fit - is this OK/desirible? It means that the residuals won't look right.
         self.model_cnt[:] = 1.0
         for cc in range(len(result._contfinal)):
             val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
