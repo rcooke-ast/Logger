@@ -988,7 +988,8 @@ class SelectRegions(object):
                 err_redshift_all[ll][ss] = np.std(newzabs)
 
         # Store the continuum fits
-        # TODO :: continuum is lost when accepting a fit - is this OK/desirible? It means that the residuals won't look right.
+        # TODO :: continuum is lost when accepting a fit - is this OK/desirible?
+        # It means that the residuals won't look right, but the stored parameters will be OK
         self.model_cnt[:] = 1.0
         for cc in range(len(result._contfinal)):
             val = np.nonzero(np.in1d(self.prop._wave, result._wavefull[cc]))
