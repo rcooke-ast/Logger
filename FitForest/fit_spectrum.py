@@ -763,8 +763,6 @@ class SelectRegions(object):
         if np.sum(allreg) == 0:
             self.update_infobox("You must select some data to be included in the fit", yesno=False)
             return [False, None]
-        # TODO :: UP TO HERE - need to extract data, then set up appropriate datlines and modlines.
-        # Then, make sure everything fits and unpacks correctly!!
         for dd in range(nsnip):
             # Find the endpoints
             lpix = wavidx[dd][0]
