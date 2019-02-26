@@ -8,6 +8,7 @@ import pickle
 from matplotlib.lines import Line2D
 import matplotlib.transforms as mtransforms
 from quasars import QSO
+from astropy.io import fits
 from scipy.optimize import curve_fit
 from scipy.special import wofz
 from alis.alis import alis
@@ -1621,7 +1622,39 @@ class AbsorptionLines:
         #  - Column density and error
         #  - Bval and error
         #  - Redshift and error
-        pass
+
+        # Generate some header information
+        hdr = fits.Header()
+        hdr['QSOname'] =
+        hdr['MJD'] =
+        hdr['specres'] =
+        hduh = fits.PrimaryHDU(header=hdr)
+
+        ions = 0
+        waverest = 0
+        waveobs = 0
+        coldens = 0
+        coldens_err = 0
+        zabs = 0
+        zabs_err = 0
+        doppler = 0
+        doppler_err = 0
+        # Put the data into columns
+        c1 = fits.Column(name='ion', array=ions, format='K')
+        c2 = fits.Column(name='waverest', array=waverest, format='K')
+        c3 = fits.Column(name='waveobs', array=waveobs, format='K')
+        c4 = fits.Column(name='coldens', array=coldens, format='K')
+        c5 = fits.Column(name='coldens_err', array=coldens_err, format='K')
+        c6 = fits.Column(name='zabs', array=zabs, format='K')
+        c7 = fits.Column(name='zabs_err', array=zabs_err, format='K')
+        c8 = fits.Column(name='doppler', array=doppler, format='K')
+        c9 = fits.Column(name='doppler_err', array=doppler_err, format='K')
+        # Prepare and write the fits file
+        hdut = fits.BinTableHDU.from_columns([c1, c2, c3, c4, c5, c6, c7, c8, c9])
+        # Create a HDU list
+        hdul = fits.HDUList([hduh, hdut])
+        hdul.writeto('table2.fits')
+        return
 
 
 class Atomic:
