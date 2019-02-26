@@ -1688,7 +1688,6 @@ class AbsorptionLines:
         # Create a HDU list and save to file
         hdul = fits.HDUList([hduh, hdut])
         hdul.writeto(outname)
-        # TODO : Check the output is correct
         return
 
 
