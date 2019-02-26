@@ -1289,7 +1289,7 @@ class SelectRegions(object):
         self.canvas.draw()
 
     def write_data(self):
-        self.lines_mst.write_data()
+        self.lines_mst.write_data(self.prop)
         return
 
 
@@ -1327,6 +1327,9 @@ class Props:
         self._outf = outf
         self._zem = qso._zem
         self._vfwhm = qso._vFWHM
+        self._ra = qso._RA
+        self._dec = qso._DEC
+        self._mjdobs = qso._MJDobs
 
     def set_regions(self, arr):
         self._regions = arr.copy()
@@ -1607,53 +1610,76 @@ class AbsorptionLines:
             self.fitidx[indx] = deepcopy(fitidx)
         return
 
-    def write_data(self):
-        # TODO :: Save the master absorption line infomation
-        # The information that should be saved includes:
-        # A header that lists the properties of the spectrum used in the analysis
-        #  - QSO name
-        #  - OBS date/time
-        #  - spectral resolution
-        #  - Maybe include the entire header from the original fits file?
-        # Then, the table data will include:
-        #  - Line ID number?
-        #  - Approximate central wavelength of the line
-        #  - Line ID (i.e. H I Lya, H I Lyb, metal)
-        #  - Column density and error
-        #  - Bval and error
-        #  - Redshift and error
+    def write_data(self, prop):
+        """
+        The information that should be saved includes:
+        A header that lists the properties of the spectrum used in the analysis
+         - QSO name
+         - OBS date/time
+         - spectral resolution
+         - Maybe include the entire header from the original fits file?
+        Then, the table data will include:
+         - Line ID number?
+         - Approximate central wavelength of the line
+         - Line ID (i.e. H I Lya, H I Lyb, metal)
+         - Column density and error
+         - Bval and error
+         - Redshift and error
+        """
+        mjdstr = str(prop._mjdobs).replace(".", "p")
+        outname = "{0:s}_{1:s}_masterLines.fits".format(prop._outp, mjdstr)
 
         # Generate some header information
         hdr = fits.Header()
-        hdr['QSOname'] =
-        hdr['MJD'] =
-        hdr['specres'] =
+        hdr['QSOname'] = prop._qsoname
+        hdr['RA'] = prop._ra
+        hdr['DEC'] = prop._dec
+        hdr['MJDOBS'] = prop._mjdobs
+        hdr['specres'] = prop._vfwhm
         hduh = fits.PrimaryHDU(header=hdr)
 
-        ions = 0
-        waverest = 0
-        waveobs = 0
-        coldens = 0
-        coldens_err = 0
-        zabs = 0
-        zabs_err = 0
-        doppler = 0
-        doppler_err = 0
+        # initialise the variables
+        ions = []
+        waverest = []
+        waveobs = []
+        coldens = []
+        coldens_err = []
+        zabs = []
+        zabs_err = []
+        doppler = []
+        doppler_err = []
+        # Go through all lines and add the information
+        for ll in range(self.size):
+            for tt in range(self.shifts[ll].size):
+                if self.fitidx[ll][tt] == -1:
+                    # This line has not be included in the fit - ignore it!
+                    continue
+                wave0 = float(self.label[ll][tt].split("-")[1])
+                ions.append(self.label[ll][tt].split("-")[0])
+                waverest.append(wave0)
+                waveobs.append(wave0*(1.0+self.shifts[ll][tt]))
+                coldens.append(self.coldens[ll])
+                coldens_err.append(self.err_coldens[ll])
+                zabs.append(self.shifts[ll][tt])
+                zabs_err.append(self.err_shifts[ll][tt])
+                doppler.append(self.bval[ll])
+                doppler_err.append(self.err_bval[ll])
+
         # Put the data into columns
-        c1 = fits.Column(name='ion', array=ions, format='K')
-        c2 = fits.Column(name='waverest', array=waverest, format='K')
-        c3 = fits.Column(name='waveobs', array=waveobs, format='K')
-        c4 = fits.Column(name='coldens', array=coldens, format='K')
-        c5 = fits.Column(name='coldens_err', array=coldens_err, format='K')
-        c6 = fits.Column(name='zabs', array=zabs, format='K')
-        c7 = fits.Column(name='zabs_err', array=zabs_err, format='K')
-        c8 = fits.Column(name='doppler', array=doppler, format='K')
-        c9 = fits.Column(name='doppler_err', array=doppler_err, format='K')
+        c1 = fits.Column(name='ion', array=ions, format='7a')
+        c2 = fits.Column(name='waverest', array=waverest, format='d')
+        c3 = fits.Column(name='waveobs', array=waveobs, format='d')
+        c4 = fits.Column(name='coldens', array=coldens, format='d')
+        c5 = fits.Column(name='coldens_err', array=coldens_err, format='d')
+        c6 = fits.Column(name='zabs', array=zabs, format='d')
+        c7 = fits.Column(name='zabs_err', array=zabs_err, format='d')
+        c8 = fits.Column(name='doppler', array=doppler, format='d')
+        c9 = fits.Column(name='doppler_err', array=doppler_err, format='d')
         # Prepare and write the fits file
         hdut = fits.BinTableHDU.from_columns([c1, c2, c3, c4, c5, c6, c7, c8, c9])
-        # Create a HDU list
+        # Create a HDU list and save to file
         hdul = fits.HDUList([hduh, hdut])
-        hdul.writeto('table2.fits')
+        hdul.writeto(outname)
         return
 
 
