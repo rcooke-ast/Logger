@@ -423,7 +423,8 @@ class SelectRegions(object):
                 self._end = self.get_ind_under_point(axisID, event.xdata)
                 if self._end == self._start:
                     # The mouse button was pressed (not dragged)
-                    self.operations('uli', axisID, self.mouseidx, params=[self._start, self._addsub])
+                    if self.lines_act.size != 0:
+                        self.operations('uli', axisID, self.mouseidx, params=[self._start, self._addsub])
                 else:
                     # The mouse button was dragged
                     # Now update the actors
@@ -616,6 +617,7 @@ class SelectRegions(object):
         """
         For each operation performed on the data, save information about the operation performed.
         """
+        # TODO :: I'm not sure either of the autosave features are working.
         # Save the current state of the class
         self.store_actions()
         # Save the data
@@ -787,7 +789,7 @@ class SelectRegions(object):
         modlines = self.lines_act.alis_modlines(nsnip)
 
         # Some testing to check the ALIS file is being constructed correctly
-        writefile = True
+        writefile = False
         if writefile:
             #print(wavrng)
             fil = open("tempdata/testfile.mod", 'w')
@@ -814,7 +816,8 @@ class SelectRegions(object):
         for ll in range(nlines):
             errs = [res['coldens_err'][ll], res['redshift_err'][ll], res['bval_err'][ll]]
             self.lines_upd.add_absline(res['coldens'][ll], res['redshift'][ll], res['bval'][ll], res['label'][ll],
-                                       errs=errs, shifts=res['redshift_all'][ll], err_shifts=res['redshift_all_err'][ll])
+                                       fitidx=res['fitidx'][ll], errs=errs,
+                                       shifts=res['redshift_all'][ll], err_shifts=res['redshift_all_err'][ll])
         self._update_model = ['f']
         self.update_plot()
         # Clean up (delete the data used in the fitting)
@@ -909,12 +912,14 @@ class SelectRegions(object):
         coldens, err_coldens = np.zeros(nlines), np.zeros(nlines)
         redshift, err_redshift = np.zeros(nlines), np.zeros(nlines)
         redshift_all, err_redshift_all = [], []
+        fitidx = []
         bval, err_bval = np.zeros(nlines), np.zeros(nlines)
         label = []
         for ll in range(nlines):
             label.append(deepcopy(self.lines_act.label[ll]))
             redshift_all.append(-1 * np.ones(len(self.lines_act.label[ll])))
             err_redshift_all.append(-1 * np.ones(len(self.lines_act.label[ll])))
+            fitidx.append(-1 * np.ones(len(self.lines_act.label[ll])))
 
         # Search through alis_lines for the appropriate string
         alspl = alis_lines.split("\n")
@@ -951,6 +956,7 @@ class SelectRegions(object):
                                 redshift[ll] = float(vspl[3].split("z")[0])
                                 bval[ll] = float(vspl[4].split("b")[0])
                                 redshift_all[ll][snp] = vshift[self.lines_act.fitidx[ll][snp]]
+                                fitidx[ll][snp] = self.lines_act.fitidx[ll][snp]
                     elif flag == 2:
                         if "specid=line{0:02d}".format(self.lines_act.fitidx[ll][snp]) in alspl[spl]:
                             vspl = alspl[spl].split()
@@ -999,6 +1005,7 @@ class SelectRegions(object):
 
         # Store everything compactly in a dictionary
         resdict['label'] = deepcopy(label)
+        resdict['fitidx'] = deepcopy(fitidx)
         resdict['coldens'] = coldens
         resdict['coldens_err'] = err_coldens
         resdict['redshift'] = redshift
@@ -1009,9 +1016,6 @@ class SelectRegions(object):
         resdict['redshift_all_err'] = err_redshift_all
 
         debug = False
-        # TODO :: Check that the output is reasonable and correct
-        # A few changes have been made since the original checks were done.
-        # This should be the final step
         if debug:
             np.save("work/fres_covar", fres.covar)
             np.save("work/inarr", inarr)
@@ -1031,6 +1035,7 @@ class SelectRegions(object):
                 print(resdict['bval_err'][ll])
                 print(resdict['redshift_all'][ll][:])
                 print(resdict['redshift_all_err'][ll][:])
+                print(resdict['fitidx'][ll][:])
                 print("-----------------")
 
         # Return the dictionary
@@ -1631,11 +1636,11 @@ class AbsorptionLines:
 
         # Generate some header information
         hdr = fits.Header()
-        hdr['QSOname'] = prop._qsoname
-        hdr['RA'] = prop._ra
-        hdr['DEC'] = prop._dec
-        hdr['MJDOBS'] = prop._mjdobs
-        hdr['specres'] = prop._vfwhm
+        hdr['QSOname'] = (prop._qsoname, 'Name of QSO')
+        hdr['RA'] = (prop._ra, "Target right ascension")
+        hdr['DEC'] = (prop._dec, "Target declination")
+        hdr['MJDOBS'] = (prop._mjdobs, "MJD at the time of observation")
+        hdr['specres'] = (prop._vfwhm, "Spectral resolution (km/s)")
         hduh = fits.PrimaryHDU(header=hdr)
 
         # initialise the variables
@@ -1649,6 +1654,9 @@ class AbsorptionLines:
         doppler = []
         doppler_err = []
         # Go through all lines and add the information
+        print(self.size)
+        print(self.shifts[0].size)
+        print(self)
         for ll in range(self.size):
             for tt in range(self.shifts[ll].size):
                 if self.fitidx[ll][tt] == -1:
@@ -1680,6 +1688,7 @@ class AbsorptionLines:
         # Create a HDU list and save to file
         hdul = fits.HDUList([hduh, hdut])
         hdul.writeto(outname)
+        # TODO : Check the output is correct
         return
 
 
