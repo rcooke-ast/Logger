@@ -1789,15 +1789,16 @@ class Atomic:
 
         # Load the lines file
         print("Loading a list of molecular transitions...")
+        mfilename = "molecule.dat"
         try:
-            infile = open("/Users/rcooke/Software/ALIS_dataprep/molecule.dat", "r")
+            infile = open(mfilename, "r")
         except IOError:
             print("The lines file:\n" + "molecule.dat\ndoes not exist!")
             sys.exit()
-        molecule_list=infile.readlines()
-        leninfile=len(molecule_list)
+        molecule_list = infile.readlines()
+        leninfile = len(molecule_list)
         infile.close()
-        infile = open("/Users/rcooke/Software/ALIS_dataprep/molecule.dat", "r")
+        infile = open(mfilename, "r")
         for i in range(0, leninfile):
             self._molecule_atm.append(infile.read(2))
             self._molecule_ion.append(infile.read(4))
@@ -1824,26 +1825,3 @@ class Atomic:
         self._molecule_wvl = self._molecule_wvl[argsrt]
         self._molecule_fvl = self._molecule_fvl[argsrt]
         self._molecule_gam = self._molecule_gam[argsrt]
-
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Polygon
-
-    prop = Props(QSO("HS1700p6416"))
-
-    # Ignore lines outside of wavelength range
-    wmin, wmax = np.min(prop._wave)/(1.0+prop._zem), np.max(prop._wave)/(1.0+prop._zem)
-
-    # Load atomic data
-    atom = Atomic(wmin=wmin, wmax=wmax)
-
-    spec = Line2D(prop._wave, prop._flux, linewidth=1, linestyle='solid', color='k', drawstyle='steps', animated=True)
-
-    fig, ax = plt.subplots(figsize=(16,9), facecolor="white")
-    ax.add_line(spec)
-    reg = SelectRegions(fig.canvas, ax, spec, prop, atom)
-
-    ax.set_title("Press '?' to list the available options")
-    #ax.set_xlim((prop._wave.min(), prop._wave.max()))
-    ax.set_ylim((0.0, prop._flux.max()))
-    plt.show()
