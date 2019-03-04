@@ -586,6 +586,7 @@ class SelectRegions(object):
         elif key == 'u':
             self.undo()
         elif key == 'w':
+            # TODO : Check file exists first - add to infobox if user wants to overwrite?
             self.write_data()
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
@@ -1692,7 +1693,8 @@ class AbsorptionLines:
 
 
 class Atomic:
-    def __init__(self, filename="/Users/rcooke/Software/ALIS_dataprep/atomic.dat", wmin=None, wmax=None):
+    def __init__(self, filename="atomic.dat", wmin=None, wmax=None):
+        # Get the filename
         self._wmin = wmin
         self._wmax = wmax
         self._atom_atm = []
