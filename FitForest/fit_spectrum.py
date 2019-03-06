@@ -473,6 +473,10 @@ class SelectRegions(object):
                         self.update_master()
                         self._fitchng = True
                     if autosave: self.autosave(key, axisID, mouseidx)
+                elif self._respreq[1] == "write":
+                    # First remove the old file, and save the new one
+                    os.remove(self.lines_mst.masterLines_name(self.prop))
+                    self.write_data()
                 else:
                     return
             # Reset the info box
@@ -541,6 +545,7 @@ class SelectRegions(object):
             self._respreq = self.fit_alis()
             if self._respreq[0]:
                 self.update_infobox(message="Accept fit?", yesno=True)
+            if autosave: self.autosave('f', axisID, mouseidx)
         elif key == 'g':
             self.goto(mouseidx)
         # 1 2 3 4 5 6 7 8 9 ...
@@ -586,8 +591,11 @@ class SelectRegions(object):
         elif key == 'u':
             self.undo()
         elif key == 'w':
-            # TODO : Check file exists first - add to infobox if user wants to overwrite?
-            self.write_data()
+            if os.path.exists(self.lines_mst.masterLines_name(self.prop)):
+                self._respreq = [True, "write"]
+                self.update_infobox(message="Overwrite lines file?", yesno=True)
+            else:
+                self.write_data()
         elif key == ']':
             self.shift_waverange(shiftdir=+1)
             if autosave: self.autosave(']', axisID, mouseidx)
@@ -1616,6 +1624,11 @@ class AbsorptionLines:
             self.fitidx[indx] = deepcopy(fitidx)
         return
 
+    def masterLines_name(self, prop):
+        mjdstr = str(prop._mjdobs).replace(".", "p")
+        outname = "{0:s}_{1:s}_masterLines.fits".format(prop._outp, mjdstr)
+        return outname
+
     def write_data(self, prop):
         """
         The information that should be saved includes:
@@ -1632,8 +1645,7 @@ class AbsorptionLines:
          - Bval and error
          - Redshift and error
         """
-        mjdstr = str(prop._mjdobs).replace(".", "p")
-        outname = "{0:s}_{1:s}_masterLines.fits".format(prop._outp, mjdstr)
+        outname = self.masterLines_name(prop)
 
         # Generate some header information
         hdr = fits.Header()
