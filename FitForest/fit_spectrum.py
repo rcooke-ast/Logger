@@ -455,10 +455,11 @@ class SelectRegions(object):
             self._qconf = False
 
         # Manage responses from questions posed to the user.
-        if self._respreq[0] and key not in ['r', 'g', 'b']:
+        if self._respreq[0] and key not in ['r', 'g', 'b', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
             # When a response is required, we still want to:
             #   - toggle residuals
             #   - go to/back a given line
+            #   - go to Ly1-9
             if key != "y" and key != "n":
                 return
             else:
