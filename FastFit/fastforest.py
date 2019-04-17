@@ -31,6 +31,7 @@ RJC: This is a modified version of MPFIT, which allows CPU multiprocessing
     Updated versions can be found at http://code.google.com/p/astrolibpy/source/browse/trunk/
 """
 
+import copy
 import numpy
 from multiprocessing import Pool as mpPool
 from multiprocessing.pool import ApplyResult
@@ -39,6 +40,13 @@ from multiprocessing.pool import ApplyResult
 from scipy.special import wofz
 import voigt_spline as vs
 vfunc = vs.generate_spline()
+
+# H I Lya params
+wave0 = 1215.6701 * 1.0e-8  # convert A to cm
+fval = 0.4164
+gamma = 6.265E8
+c = 299792.458
+beta = 3.76730313461770655E11
 
 
 def voigt(par, wavein, logn=True):
@@ -85,12 +93,12 @@ def voigt_spl(par, wavein, logn=True):
     return numpy.exp(-1.0 * tau), sig_j, dsig_dv, dsig_da
 
 
-def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None,
+def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None,
                  ftol=1.e-10, xtol=1.e-10, gtol=1.e-10, atol=1.e-10,
                  damp=0., miniter=0, maxiter=200, factor=100., nprint=1,
                  iterfunct='default', iterkw={}, nocovar=0, limpar=False,
                  rescale=0, autoderivative=1, verbose=2, modpass=None,
-                 diag=None, epsfcn=None, ncpus=None, fstep=1.0, debug=0, convtest=False):
+                 diag=None, epsfcn=None, ncpus=None, fstep=1.0):
     """
     Inputs:
     fcn:
@@ -339,7 +347,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
 
     if fcn == None:
         errmsg = "Usage: parms = alfit('myfunct', ... )"
-        return
+        return None
 
     if iterfunct == 'default':
         iterfunct = defiter
@@ -348,26 +356,26 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     # gradients.
     if (damp != 0) and (autoderivative == 0):
         errmsg = 'keywords DAMP and AUTODERIVATIVE are mutually exclusive'
-        return
+        return None
 
     # Parameters can either be stored in parinfo, or x. x takes precedence if it exists
     if (xall is None) and (parinfo is None):
         errmsg = 'must pass parameters in P or PARINFO'
-        return
+        return None
 
     # Be sure that PARINFO is of the right type
     if parinfo is not None:
         # if type(parinfo) != types.ListType:
         if not isinstance(parinfo, list):
             errmsg = 'PARINFO must be a list of dictionaries.'
-            return
+            return None
         else:
             if not isinstance(parinfo[0], dict):  # type(parinfo[0]) != types.DictionaryType:
                 errmsg = 'PARINFO must be a list of dictionaries.'
-                return
+                return None
         if ((xall is not None) and (len(xall) != len(parinfo))):
             errmsg = 'number of elements in PARINFO and P must agree'
-            return
+            return None
 
     # If the parameters were not specified at the command line, then
     # extract them from PARINFO
@@ -375,7 +383,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
         xall = parse_parinfo(parinfo, 'value')
         if xall is None:
             errmsg = 'either P or PARINFO(*)["value"] must be supplied.'
-            return
+            return None
 
     # Make sure parameters are numpy arrays
     xall = numpy.asarray(xall)
@@ -415,7 +423,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     qmax = maxstep != 0
     if numpy.any(qmin & qmax & (maxstep < minstep)):
         errmsg = 'MPMINSTEP is greater than MPMAXSTEP'
-        return
+        return None
     wh = (numpy.nonzero((qmin != 0.) | (qmax != 0.)))[0]
     qminmax = len(wh > 0)
 
@@ -424,10 +432,10 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     nfree = len(ifree)
     if nfree == 0:
         errmsg = 'No free parameters'
-        return
+        return None
 
     # Compose only VARYING parameters
-    params = xall.copy()  # params is the set of parameters to be returned
+    params = xall.copy()  # params is the set of parameters to be return Noneed
     x = params[ifree]  # x is the set of free parameters
 
     # LIMITED parameters ?
@@ -439,7 +447,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
                      (limits[:, 0] >= limits[:, 1]) &
                      (pfixed == 0)):
             errmsg = 'Parameter limits are not consistent'
-            return
+            return None
         if numpy.any(((limited[:, 0] == 1) & (xall < limits[:, 0])) |
                      ((limited[:, 1] == 1) & (xall > limits[:, 1]))):
             # Find the parameter that is not within the limits
@@ -457,7 +465,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
             else:
                 errmsg = [outlim, str(params[outlim][0])]
                 status = -21
-                return
+                return None
 
         # Transfer structure values to local variables
         qulim = (limited[:, 1])[ifree]
@@ -482,21 +490,21 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     if (n < 0) or (ftol < 0) or (xtol < 0) or (gtol < 0) \
             or (maxiter < 0) or (factor <= 0):
         errmsg = 'input keywords are inconsistent'
-        return
+        return None
 
     if rescale != 0:
         errmsg = 'DIAG parameter scales are inconsistent'
         if len(diag) < n:
-            return
+            return None
         if numpy.any(diag <= 0):
-            return
+            return None
         errmsg = ''
 
     [status, fvec, emab] = call(fcn, params, functkw, ptied, qanytied, getemab=True, damp=damp)
 
     if status < 0:
         errmsg = 'first call to "' + str(fcn) + '" failed'
-        return
+        return None
     # If the returned fvec has more than four bits I assume that we have
     # double precision
     # It is important that the machar is determined by the precision of
@@ -510,7 +518,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     m = len(fvec)
     if m < n:
         errmsg = 'number of parameters must not exceed data'
-        return
+        return None
     dof = m - nfree
     fnorm = enorm(fvec)
 
@@ -537,14 +545,14 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
                 dof = numpy.max([len(fvec) - len(x), 0])
                 status = iterfunct(fcn, params, niter, ptied, qanytied, fnorm ** 2, damp=damp,
                                    functkw=functkw, parinfo=parinfo, verbose=verbose,
-                                   modpass=modpass, convtest=convtest, dof=dof, funcarray=funcarray, **iterkw)
+                                   modpass=modpass, dof=dof, funcarray=funcarray, **iterkw)
                 if status is not None:
                     status = status
 
                 # Check for user termination
                 if status < 0:
                     errmsg = 'WARNING: premature termination by ' + str(iterfunct)
-                    return
+                    return None
 
                 # If parameters were changed (grrr..) then re-tie
                 if numpy.max(numpy.abs(xnew0 - params)) > 0:
@@ -561,7 +569,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
                            functkw=functkw, ifree=ifree, xall=params, damp=damp)
         if fjac is None:
             errmsg = 'WARNING: premature termination by FDJAC2'
-            return
+            return None
 
         # Determine if any of the parameters are pegged at the limits
         if qanylim:
@@ -831,7 +839,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
             # [status, wa4] = call(fcn, params, functkw)
             if status < 0:
                 errmsg = 'WARNING: premature termination by "' + fcn + '"'
-                return
+                return None
             fnorm1 = enorm(wa4)
 
             # Compute the scaled actual reduction
@@ -945,7 +953,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     catch_msg = 'in the termination phase'
     # Termination, either normal or user imposed.
     if len(params) == 0:
-        return
+        return None
     if nfree == 0:
         params = xall.copy()
     else:
@@ -987,17 +995,15 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
             wh = (numpy.nonzero(d >= 0))[0]
             if len(wh) > 0:
                 perror[wh] = numpy.sqrt(d[wh])
-    return
-
-    # def __str__(self):
-    #     return {'params': params,
-    #             'niter': niter,
-    #             'covar': covar,
-    #             'perror': perror,
-    #             'status': status,
-    #             'errmsg': errmsg,
-    #             'damp': damp
-    #             }.__str__()
+    # Pack up the fit
+    results = dict(params=params,
+                   niter=niter,
+                   covar=covar,
+                   perror=perror,
+                   status=status,
+                   errmsg=errmsg,
+                   damp=damp)
+    return results
 
 
 # Default procedure to be called every iteration.  It simply prints
@@ -1005,7 +1011,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
 def defiter(fcn, x, iter, ptied, qanytied, damp=0.0, fnorm=None, functkw=None,
             verbose=2, iterstop=None, parinfo=None,
             format=None, pformat='%.10g', dof=1,
-            modpass=None, convtest=False, funcarray=[None, None, None]):
+            modpass=None, funcarray=[None, None, None]):
 
     if verbose == 0:
         return
@@ -1569,3 +1575,40 @@ class macharc:
         self.rdwarf = numpy.sqrt(self.minnum * 1.5) * 10
         self.rgiant = numpy.sqrt(self.maxnum) * 0.1
 
+
+def test_simple():
+    # Generate some fake data
+    snr = 30.0
+    cold = 14.7
+    zabs = 3.0
+    bval = 10.0
+    par = [cold, zabs, bval, wave0, fval, gamma]
+    p0 = numpy.array([14.5, 3.0, 20.0])
+
+    wv_arr = numpy.linspace(4860.0, 4865.0, 125)
+    md_arr = voigt(par, wv_arr)
+    fe_arr = numpy.ones(wv_arr.size) / snr
+    fx_arr = numpy.random.normal(md_arr, fe_arr)
+
+    # Set some constraints you would like to impose
+    param_base = {'value': 0., 'fixed': 0, 'limited': [0, 0], 'limits': [0., 0.]}
+
+    # Make a copy of this 'base' for all of our parameters, and set starting parameters
+    param_info = []
+    for i in range(len(p0)):
+        param_info.append(copy.deepcopy(param_base))
+        param_info[i]['value'] = p0[i]
+
+    # Now put in some further constraints
+    param_info[0]['limited'] = [1, 0]  # Set the lower bound of parameter 0 to 'True' (i.e. 1)
+    param_info[0]['limits'] = [0.0, 0.0]  # Set the lower limit of parameter 0 to 0.0
+
+    # Now tell the fitting program what we called our variables
+    fa = {'x': wv_arr, 'y': fx_arr, 'err': fe_arr}
+
+    # Perform the fit
+    results = chisqmin(voigt, p0, parinfo=param_info, functkw=fa, verbose=1)
+
+
+if __name__ == "__main__":
+    test_simple()
