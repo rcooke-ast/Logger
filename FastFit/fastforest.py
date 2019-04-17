@@ -50,6 +50,7 @@ beta = 3.76730313461770655E11
 
 
 def voigt(par, wavein, logn=True):
+    epar = [wave0, fval, gamma]
     # Column density
     if logn:
         cold = 10.0 ** par[0]
@@ -57,11 +58,11 @@ def voigt(par, wavein, logn=True):
         cold = par[0]
     # Redshift
     zp1 = par[1] + 1.0
-    wv = par[3]
+    wv = epar[0]
     # Doppler parameter
     bl = par[2] * wv / 2.99792458E5
-    a = par[5] * wv * wv / (3.76730313461770655E11 * bl)
-    cns = wv * wv * par[4] / (bl * 2.002134602291006E12)
+    a = epar[2] * wv * wv / (3.76730313461770655E11 * bl)
+    cns = wv * wv * epar[1] / (bl * 2.002134602291006E12)
     cne = cold * cns
     ww = (wavein * 1.0e-8) / zp1
     v = wv * ww * ((1.0 / ww) - (1.0 / wv)) / bl
@@ -70,6 +71,7 @@ def voigt(par, wavein, logn=True):
 
 
 def voigt_spl(par, wavein, logn=True):
+    epar = [wave0, fval, gamma]
     # Column density
     if logn:
         cold = 10.0 ** par[0]
@@ -77,11 +79,11 @@ def voigt_spl(par, wavein, logn=True):
         cold = par[0]
     # Redshift
     zp1 = par[1] + 1.0
-    wv = par[3]
+    wv = epar[0]
     # Doppler parameter
     bl = par[2] * wv / 2.99792458E5
-    a = par[5] * wv * wv / (3.76730313461770655E11 * bl)
-    cns = wv * wv * par[4] / (bl * 2.002134602291006E12)
+    a = epar[2] * wv * wv / (3.76730313461770655E11 * bl)
+    cns = wv * wv * epar[1] / (bl * 2.002134602291006E12)
     cne = cold * cns
     ww = (wavein * 1.0e-8) / zp1
     v = wv * ww * ((1.0 / ww) - (1.0 / wv)) / bl
@@ -93,11 +95,19 @@ def voigt_spl(par, wavein, logn=True):
     return numpy.exp(-1.0 * tau), sig_j, dsig_dv, dsig_da
 
 
-def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None,
+def myfunct(p, fjac=None, x=None, y=None, err=None):
+    model = voigt(p, x)
+    # Non-negative status value means MPFIT should
+    # continue, negative means stop the calculation.
+    status = 0
+    return [status, (y-model)/err]
+
+
+def chisqmin(fcn, xall=None, functkw={}, parinfo=None,
                  ftol=1.e-10, xtol=1.e-10, gtol=1.e-10, atol=1.e-10,
                  damp=0., miniter=0, maxiter=200, factor=100., nprint=1,
                  iterfunct='default', iterkw={}, nocovar=0, limpar=False,
-                 rescale=0, autoderivative=1, verbose=2, modpass=None,
+                 rescale=0, autoderivative=1, verbose=2,
                  diag=None, epsfcn=None, ncpus=None, fstep=1.0):
     """
     Inputs:
@@ -455,7 +465,7 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
                 ((limited[:, 0] == 1) & (xall < limits[:, 0])) | ((limited[:, 1] == 1) & (xall > limits[:, 1])))[0]
             if limpar:  # Push parameters to the model limits
                 for ol in range(len(outlim)):
-                    if ((limited[outlim[ol], 0] == 1) & (xall[outlim[ol]] < limits[outlim[ol], 0])):
+                    if (limited[outlim[ol], 0] == 1) & (xall[outlim[ol]] < limits[outlim[ol], 0]):
                         newval = limits[outlim[ol], 0]
                     else:
                         newval = limits[outlim[ol], 1]
@@ -500,7 +510,7 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
             return None
         errmsg = ''
 
-    [status, fvec, emab] = call(fcn, params, functkw, ptied, qanytied, getemab=True, damp=damp)
+    [status, fvec] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
 
     if status < 0:
         errmsg = 'first call to "' + str(fcn) + '" failed'
@@ -543,11 +553,10 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
                 xnew0 = params.copy()
 
                 dof = numpy.max([len(fvec) - len(x), 0])
-                status = iterfunct(fcn, params, niter, ptied, qanytied, fnorm ** 2, damp=damp,
-                                   functkw=functkw, parinfo=parinfo, verbose=verbose,
-                                   modpass=modpass, dof=dof, funcarray=funcarray, **iterkw)
-                if status is not None:
-                    status = status
+                tstatus = iterfunct(fcn, params, niter, ptied, qanytied, fnorm ** 2, damp=damp,
+                                   functkw=functkw, parinfo=parinfo, verbose=verbose, dof=dof, **iterkw)
+                if tstatus is not None:
+                    status = tstatus
 
                 # Check for user termination
                 if status < 0:
@@ -564,7 +573,7 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
         status = 2
         catch_msg = 'calling ALFIT_FDJAC2'
         fjac = fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied, step, qulim, ulim, dside,
-                           epsfcn=epsfcn, emab=emab, ncpus=ncpus,
+                           epsfcn=epsfcn, ncpus=ncpus,
                            autoderivative=autoderivative, dstep=dstep,
                            functkw=functkw, ifree=ifree, xall=params, damp=damp)
         if fjac is None:
@@ -667,8 +676,7 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
 
             # Determine the levenberg-marquardt parameter
             catch_msg = 'calculating LM parameter (ALIS_)'
-            [fjac, par, wa1, wa2] = lmpar(fjac, ipvt, diag, qtf,
-                                               delta, wa1, wa2, par=par)
+            [fjac, par, wa1, wa2] = lmpar(fjac, ipvt, diag, qtf, delta, wa1, wa2, machar, par=par)
             # Store the direction p and x+p. Calculate the norm of p
             wa1 = -wa1
 
@@ -835,7 +843,7 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
             # Evaluate the function at x+p and calculate its norm
             mperr = 0
             catch_msg = 'calling ' + str(fcn)
-            [status, wa4, emab] = call(fcn, params, functkw, ptied, qanytied, getemab=True, damp=damp)
+            [status, wa4] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
             # [status, wa4] = call(fcn, params, functkw)
             if status < 0:
                 errmsg = 'WARNING: premature termination by "' + fcn + '"'
@@ -1002,16 +1010,16 @@ def chisqmin(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=N
                    perror=perror,
                    status=status,
                    errmsg=errmsg,
+                   catchmsg=catch_msg,
                    damp=damp)
     return results
 
 
 # Default procedure to be called every iteration.  It simply prints
 # the parameter values.
-def defiter(fcn, x, iter, ptied, qanytied, damp=0.0, fnorm=None, functkw=None,
+def defiter(fcn, x, iter, ptied, qanytied, fnorm=None, functkw=None,
             verbose=2, iterstop=None, parinfo=None,
-            format=None, pformat='%.10g', dof=1,
-            modpass=None, funcarray=[None, None, None]):
+            format=None, pformat='%.10g', dof=1, damp=0.0):
 
     if verbose == 0:
         return
@@ -1024,7 +1032,7 @@ def defiter(fcn, x, iter, ptied, qanytied, damp=0.0, fnorm=None, functkw=None,
     if verbose <= 0: return
     print("ITERATION ", ('%6i' % iter), "   CHI-SQUARED = ", ('%.10g' % fnorm), " DOF = ", ('%i' % dof),
           " (REDUCED = {0:f})".format(fnorm / float(dof)))
-    if verbose == 1 or modpass == None:
+    if verbose == 1:
         return
     else:
         return 0
@@ -1056,7 +1064,7 @@ def parse_parinfo(parinfo=None, key='a', default=None, n=0):
     return values
 
 
-def call(fcn, x, functkw, ptied, qanytied, fjac=None, ddpid=None, damp=0.0, pp=None, emab=None, getemab=False):
+def call(fcn, x, functkw, ptied, qanytied, fjac=None, damp=0.0):
     # Call user function or procedure, with _EXTRA or not, with
     # derivatives or not.
     if qanytied:
@@ -1066,12 +1074,12 @@ def call(fcn, x, functkw, ptied, qanytied, fjac=None, ddpid=None, damp=0.0, pp=N
             # Apply the damping if requested.  This replaces the residuals
             # with their hyperbolic tangent.  Thus residuals larger than
             # DAMP are essentially clipped.
-            [status, f] = fcn(x, fjac=fjac, ddpid=ddpid, pp=pp, emab=emab, getemab=getemab, **functkw)
+            [status, f] = fcn(x, fjac=fjac, **functkw)
             f = numpy.tanh(f / damp)
             return [status, f]
-        return fcn(x, fjac=fjac, ddpid=ddpid, pp=pp, emab=emab, getemab=getemab, **functkw)
+        return fcn(x, fjac=fjac, **functkw)
     else:
-        return fcn(x, fjac=fjac, ddpid=ddpid, pp=pp, emab=emab, getemab=getemab, **functkw)
+        return fcn(x, fjac=fjac, **functkw)
 
 
 def enorm(vec):
@@ -1079,10 +1087,10 @@ def enorm(vec):
     return ans
 
 
-def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, emab, oneside, ptied, qanytied, damp=0.0):
+def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, oneside, ptied, qanytied, damp):
     pp = xp.copy()
     pp[ifree] += hj
-    [status, fp] = call(fcn, xp, functkw, ptied, qanytied, ddpid=j, pp=pp, emab=emab, damp=damp)
+    [status, fp] = call(fcn, pp, functkw, ptied, qanytied, damp=damp)
     if status < 0:
         return None
     if oneside:
@@ -1090,9 +1098,8 @@ def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, emab, oneside, ptied, qanyti
         fjac = (fp - fvec) / hj
     else:
         # COMPUTE THE TWO-SIDED DERIVATIVE
-        pp[
-            ifree] -= 2.0 * hj  # There's a 2.0 here because hj was recently added to pp (see second line of funcderiv)
-        [status, fm] = call(fcn, xp, functkw, ptied, qanytied, ddpid=j, pp=pp, emab=emab, damp=damp)
+        pp[ifree] -= 2.0 * hj  # There's a 2.0 here because hj was recently added to pp (see second line of funcderiv)
+        [status, fm] = call(fcn, pp, functkw, ptied, qanytied, damp=damp)
         if status < 0:
             return None
         fjac = (fp - fm) / (2.0 * hj)
@@ -1101,7 +1108,7 @@ def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, emab, oneside, ptied, qanyti
 
 def fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied,
            step=None, ulimited=None, ulimit=None, dside=None,
-           epsfcn=None, emab=None, autoderivative=1, ncpus=1,
+           epsfcn=None, autoderivative=1, ncpus=1,
            functkw=None, xall=None, ifree=None, dstep=None, damp=0.0):
 
     machep = machar.machep
@@ -1185,11 +1192,11 @@ def fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied,
         if numpy.abs(dside[ifree[j]]) <= 1:
             # COMPUTE THE ONE-SIDED DERIVATIVE
             async_results.append(
-                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], emab, True, ptied, qanytied, damp)))
+                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], True, ptied, qanytied, damp)))
         else:
             # COMPUTE THE TWO-SIDED DERIVATIVE
             async_results.append(
-                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], emab, False, ptied, qanytied, damp)))
+                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], False, ptied, qanytied, damp)))
     pool.close()
     pool.join()
     map(ApplyResult.wait, async_results)
@@ -1207,10 +1214,10 @@ def fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied,
 #		for j in range(n):
 #			if numpy.abs(dside[ifree[j]]) <= 1:
 #				# COMPUTE THE ONE-SIDED DERIVATIVE
-#				async_results.append(funcderiv(fcn,fvec,functkw,j,xall,ifree[j],h[j],emab,True))
+#				async_results.append(funcderiv(fcn,fvec,functkw,j,xall,ifree[j],h[j],True))
 #			else:
 #				# COMPUTE THE TWO-SIDED DERIVATIVE
-#				async_results.append(funcderiv(fcn,fvec,functkw,j,xall,ifree[j],h[j],emab,False))
+#				async_results.append(funcderiv(fcn,fvec,functkw,j,xall,ifree[j],h[j],False))
 #		for j in range(n):
 #			getVal = async_results[j]
 #			if getVal == None: return None
@@ -1582,7 +1589,7 @@ def test_simple():
     cold = 14.7
     zabs = 3.0
     bval = 10.0
-    par = [cold, zabs, bval, wave0, fval, gamma]
+    par = [cold, zabs, bval]
     p0 = numpy.array([14.5, 3.0, 20.0])
 
     wv_arr = numpy.linspace(4860.0, 4865.0, 125)
@@ -1607,7 +1614,10 @@ def test_simple():
     fa = {'x': wv_arr, 'y': fx_arr, 'err': fe_arr}
 
     # Perform the fit
-    results = chisqmin(voigt, p0, parinfo=param_info, functkw=fa, verbose=1)
+    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=1)
+    #print(results['errmsg'], results['status'])
+    #print(results['catchmsg'])
+    print(results['params'], results['perror'])
 
 
 if __name__ == "__main__":
