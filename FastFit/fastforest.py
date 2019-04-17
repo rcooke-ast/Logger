@@ -32,14 +32,11 @@ RJC: This is a modified version of MPFIT, which allows CPU multiprocessing
 """
 
 import numpy
-import signal
 from multiprocessing import Pool as mpPool
 from multiprocessing.pool import ApplyResult
-from copyreg import pickle
-from scipy.special import wofz
-from types import MethodType
 
 # Get a spline representation of the Voigt function
+from scipy.special import wofz
 import voigt_spline as vs
 vfunc = vs.generate_spline()
 
@@ -398,7 +395,6 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
         ptied[i] = ptied[i].strip()
         if ptied[i] != '':
             qanytied = 1
-    self.ptied = ptied
 
     # FIXED parameters ?
     pfixed = parse_parinfo(parinfo, 'fixed', default=0, n=npar)
@@ -496,7 +492,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
             return
         errmsg = ''
 
-    [status, fvec, emab] = call(fcn, params, functkw, getemab=True)
+    [status, fvec, emab] = call(fcn, params, functkw, ptied, qanytied, getemab=True, damp=damp)
 
     if status < 0:
         errmsg = 'first call to "' + str(fcn) + '" failed'
@@ -506,9 +502,9 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
     # It is important that the machar is determined by the precision of
     # the returned value, not by the precision of the input array
     if numpy.array([fvec]).dtype.itemsize > 4:
-        machar = machar(double=1)
+        machar = macharc(double=1)
     else:
-        machar = machar(double=0)
+        machar = macharc(double=0)
     machep = machar.machep
 
     m = len(fvec)
@@ -539,7 +535,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
                 xnew0 = params.copy()
 
                 dof = numpy.max([len(fvec) - len(x), 0])
-                status = iterfunct(fcn, params, niter, fnorm ** 2,
+                status = iterfunct(fcn, params, niter, ptied, qanytied, fnorm ** 2, damp=damp,
                                    functkw=functkw, parinfo=parinfo, verbose=verbose,
                                    modpass=modpass, convtest=convtest, dof=dof, funcarray=funcarray, **iterkw)
                 if status is not None:
@@ -559,10 +555,10 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
         # Calculate the jacobian matrix
         status = 2
         catch_msg = 'calling ALFIT_FDJAC2'
-        fjac = fdjac2(fcn, x, fvec, machar, fstep, step, qulim, ulim, dside,
+        fjac = fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied, step, qulim, ulim, dside,
                            epsfcn=epsfcn, emab=emab, ncpus=ncpus,
                            autoderivative=autoderivative, dstep=dstep,
-                           functkw=functkw, ifree=ifree, xall=params)
+                           functkw=functkw, ifree=ifree, xall=params, damp=damp)
         if fjac is None:
             errmsg = 'WARNING: premature termination by FDJAC2'
             return
@@ -743,7 +739,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
                     watemp = numpy.zeros(npar)
                     watemp[ifree] = wa1.copy()
                     for pqt in range(npar):
-                        if self.ptied[pqt] == '': continue
+                        if ptied[pqt] == '': continue
                         cmd = "parval = " + parinfo[pqt]['tied'].replace("p[", "xcopy[")
                         namespace = dict({'xcopy': xcopy})
                         exec(cmd, namespace)
@@ -831,7 +827,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
             # Evaluate the function at x+p and calculate its norm
             mperr = 0
             catch_msg = 'calling ' + str(fcn)
-            [status, wa4, emab] = call(fcn, params, functkw, getemab=True)
+            [status, wa4, emab] = call(fcn, params, functkw, ptied, qanytied, getemab=True, damp=damp)
             # [status, wa4] = call(fcn, params, functkw)
             if status < 0:
                 errmsg = 'WARNING: premature termination by "' + fcn + '"'
@@ -956,7 +952,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
         params[ifree] = x
     if (nprint > 0) and (status > 0):
         catch_msg = 'calling ' + str(fcn)
-        [status, fvec] = call(fcn, params, functkw)
+        [status, fvec] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
         catch_msg = 'in the termination phase'
         fnorm = enorm(fvec)
 
@@ -1006,7 +1002,7 @@ def alfit(fcn, xall=None, functkw={}, funcarray=[None, None, None], parinfo=None
 
 # Default procedure to be called every iteration.  It simply prints
 # the parameter values.
-def defiter(fcn, x, iter, fnorm=None, functkw=None,
+def defiter(fcn, x, iter, ptied, qanytied, damp=0.0, fnorm=None, functkw=None,
             verbose=2, iterstop=None, parinfo=None,
             format=None, pformat='%.10g', dof=1,
             modpass=None, convtest=False, funcarray=[None, None, None]):
@@ -1014,7 +1010,7 @@ def defiter(fcn, x, iter, fnorm=None, functkw=None,
     if verbose == 0:
         return
     if fnorm is None:
-        [status, fvec] = call(fcn, x, functkw)
+        [status, fvec] = call(fcn, x, functkw, ptied, qanytied, damp=damp)
         fnorm = enorm(fvec) ** 2
 
     # Determine which parameters to print
@@ -1054,18 +1050,18 @@ def parse_parinfo(parinfo=None, key='a', default=None, n=0):
     return values
 
 
-def call(self, fcn, x, functkw, fjac=None, ddpid=None, pp=None, emab=None, getemab=False):
+def call(fcn, x, functkw, ptied, qanytied, fjac=None, ddpid=None, damp=0.0, pp=None, emab=None, getemab=False):
     # Call user function or procedure, with _EXTRA or not, with
     # derivatives or not.
-    if self.qanytied:
-        x = tie(x, self.ptied)
+    if qanytied:
+        x = tie(x, ptied)
     if fjac is None:
-        if self.damp > 0:
+        if damp > 0:
             # Apply the damping if requested.  This replaces the residuals
             # with their hyperbolic tangent.  Thus residuals larger than
             # DAMP are essentially clipped.
             [status, f] = fcn(x, fjac=fjac, ddpid=ddpid, pp=pp, emab=emab, getemab=getemab, **functkw)
-            f = numpy.tanh(f / self.damp)
+            f = numpy.tanh(f / damp)
             return [status, f]
         return fcn(x, fjac=fjac, ddpid=ddpid, pp=pp, emab=emab, getemab=getemab, **functkw)
     else:
@@ -1077,10 +1073,10 @@ def enorm(vec):
     return ans
 
 
-def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, emab, oneside):
+def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, emab, oneside, ptied, qanytied, damp=0.0):
     pp = xp.copy()
     pp[ifree] += hj
-    [status, fp] = call(fcn, xp, functkw, ddpid=j, pp=pp, emab=emab)
+    [status, fp] = call(fcn, xp, functkw, ptied, qanytied, ddpid=j, pp=pp, emab=emab, damp=damp)
     if status < 0:
         return None
     if oneside:
@@ -1090,16 +1086,17 @@ def funcderiv(fcn, fvec, functkw, j, xp, ifree, hj, emab, oneside):
         # COMPUTE THE TWO-SIDED DERIVATIVE
         pp[
             ifree] -= 2.0 * hj  # There's a 2.0 here because hj was recently added to pp (see second line of funcderiv)
-        [status, fm] = call(fcn, xp, functkw, ddpid=j, pp=pp, emab=emab)
+        [status, fm] = call(fcn, xp, functkw, ptied, qanytied, ddpid=j, pp=pp, emab=emab, damp=damp)
         if status < 0:
             return None
         fjac = (fp - fm) / (2.0 * hj)
     return [j, fjac]
 
 
-def fdjac2(fcn, x, fvec, machar, fstep, step=None, ulimited=None, ulimit=None, dside=None,
+def fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied,
+           step=None, ulimited=None, ulimit=None, dside=None,
            epsfcn=None, emab=None, autoderivative=1, ncpus=1,
-           functkw=None, xall=None, ifree=None, dstep=None):
+           functkw=None, xall=None, ifree=None, dstep=None, damp=0.0):
 
     machep = machar.machep
     if epsfcn is None:
@@ -1121,7 +1118,7 @@ def fdjac2(fcn, x, fvec, machar, fstep, step=None, ulimited=None, ulimit=None, d
         mperr = 0
         fjac = numpy.zeros(nall, dtype=float)
         fjac[ifree] = 1.0  # Specify which parameters need derivatives
-        [status, fp, fjac] = call(fcn, xall, functkw, fjac=fjac)
+        [status, fp, fjac] = call(fcn, xall, functkw, ptied, qanytied, fjac=fjac, damp=damp)
 
         if fjac.size != m * nall:
             print('Derivative matrix was not computed properly.')
@@ -1182,11 +1179,11 @@ def fdjac2(fcn, x, fvec, machar, fstep, step=None, ulimited=None, ulimit=None, d
         if numpy.abs(dside[ifree[j]]) <= 1:
             # COMPUTE THE ONE-SIDED DERIVATIVE
             async_results.append(
-                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], emab, True)))
+                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], emab, True, ptied, qanytied, damp)))
         else:
             # COMPUTE THE TWO-SIDED DERIVATIVE
             async_results.append(
-                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], emab, False)))
+                pool.apply_async(funcderiv, (fcn, fvec, functkw, j, xall, ifree[j], h[j], emab, False, ptied, qanytied, damp)))
     pool.close()
     pool.join()
     map(ApplyResult.wait, async_results)
@@ -1556,7 +1553,7 @@ def calc_covar(rr, ipvt=None, tol=1.e-14):
     return r
 
 
-class machar:
+class macharc:
     def __init__(self, double=1):
         if double == 0:
             info = numpy.finfo(numpy.float32)
