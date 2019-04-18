@@ -560,9 +560,9 @@ def chisqmin(fcn, xall=None, functkw={}, parinfo=None,
         errmsg = ''
 
     if autoderivative:
-        [status, fvec, fjac] = call(fcn, params, functkw, ptied, qanytied, fjac=True, damp=damp)
+        [status, fvec, newfjac] = call(fcn, params, functkw, ptied, qanytied, fjac=True, damp=damp)
     else:
-        [status, fvec, fjac] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
+        [status, fvec, newfjac] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
 
     if status < 0:
         errmsg = 'first call to "' + str(fcn) + '" failed'
@@ -626,7 +626,7 @@ def chisqmin(fcn, xall=None, functkw={}, parinfo=None,
         catch_msg = 'calling ALFIT_FDJAC2'
         if autoderivative:
             # We have already calculated the derivatives
-            pass
+            fjac = newfjac
         else:
             fjac = fdjac2(fcn, x, fvec, machar, fstep, ptied, qanytied, step, qulim, ulim, dside,
                            epsfcn=epsfcn, ncpus=ncpus,
@@ -961,7 +961,6 @@ def chisqmin(fcn, xall=None, functkw={}, parinfo=None,
                 xnorm = enorm(wa2)
                 fnorm = fnorm1
                 niter = niter + 1
-                fjac = newfjac
 
             # Tests for convergence
             if ftol != 0.0:
