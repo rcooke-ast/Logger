@@ -31,6 +31,7 @@ RJC: This is a modified version of MPFIT, which allows CPU multiprocessing
     Updated versions can be found at http://code.google.com/p/astrolibpy/source/browse/trunk/
 """
 
+import pdb
 import copy
 import numpy
 from multiprocessing import Pool as mpPool
@@ -968,7 +969,7 @@ def chisqmin(fcn, xall=None, functkw={}, parinfo=None,
         params[ifree] = x
     if (nprint > 0) and (status > 0):
         catch_msg = 'calling ' + str(fcn)
-        [status, fvec] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
+        [tstatus, fvec] = call(fcn, params, functkw, ptied, qanytied, damp=damp)
         catch_msg = 'in the termination phase'
         fnorm = enorm(fvec)
 

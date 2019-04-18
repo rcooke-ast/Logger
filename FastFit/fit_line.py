@@ -53,7 +53,7 @@ def voigt_spl(par, wavein, logn=True):
     ww = (wavein * 1.0e-8) / zp1
     v = wv * ww * ((1.0 / ww) - (1.0 / wv)) / bl
     v *= -1
-    sig_j = vfunc(v, a)
+    sig_j = wofz(v + 1j * a).real#vfunc(v, a)
     dsig_dv = vfunc(v, a, dx=1)
     dsig_da = vfunc(v, a, dy=1)
     tau = cne * sig_j
@@ -61,7 +61,7 @@ def voigt_spl(par, wavein, logn=True):
     return np.exp(-1.0 * tau), sig_j, dsig_dv, dsig_da
 
 
-def chisqmin(indict, rate=1.0E-4):
+def chisqmin(indict, rate=1.0E-10):
     # NOTE: The rate needs to be increased/decreased depending on whether the new chi-sq is better or worse (i.e. as in LM)
     # Enter loop to continue
     converged = False
@@ -77,34 +77,38 @@ def chisqmin(indict, rate=1.0E-4):
         csq_new = np.sum(chi**2)
         print("Iteration {0:d} :: chi-squared =".format(itnum), csq_new)
         # Calculate the parameter derivates
-        coldens = 10.0**params[0]
-        zp1 = 1.0+params[1]
+        coldens = 10.0 ** params[0]
+        Nloglin = coldens * np.log(10)
+        zp1 = 1.0 + params[1]
         bval = params[2]
-        dcsq_dM = 2.0 * np.sum(chi/indict['error'])
-        k_j = fval*wave0*299792.458/(2.002134602291006E12*bval)
-        c_b = (299792.458/bval)
-        wvscl = 1.0 - indict['wave']*1.0E-8/(zp1*wave0)
-        fact = gamma*wave0/3.76730313461770655E11
-        dM_dN = -model * k_j * sig_j
-        dM_dz = -model * k_j * coldens * c_b * dsig_dv / zp1**2
-        dM_db =  model * k_j * (coldens/bval) * (sig_j + c_b*(dsig_dv*wvscl + dsig_da*fact))
+        k_j = fval * wave0 * 299792.458 / (2.002134602291006E12 * bval)
+        c_b = (299792.458 / bval)
+        wvscl = 1.0 - indict['wave'] * 1.0E-8 / (zp1 * wave0)
+        fact = gamma * wave0 / 3.76730313461770655E11
+        dM_dN = -model * k_j * sig_j * Nloglin
+        dM_dz = model * k_j * coldens * (indict['wave'] * 1.0E-8 / wave0) * c_b * dsig_dv / zp1 ** 2
+        dM_db = -model * k_j * (coldens / bval) * (sig_j + c_b * (-dsig_dv * wvscl + dsig_da * fact))
         # Test if we have converged
         if abs(csq_old-csq_new) < 0.001:
             converged = True
         else:
             if csq_new > csq_old:
                 # We moved to a bad place, increase the rate, and go back to the old parameters
-                rate /= 2.0
+                rate /= 10.0
             else:
                 # Reduce the rate, we are converging
-                #rate /= 2.0
+                rate *= 2.0
                 csq_old = csq_new
                 # TODO :: convolve
-                Nloglin = coldens*np.log(10)
-                params[0] -= rate * np.sum(dM_dN * Nloglin) #* dcsq_dM  ???
-                params[1] -= rate * np.sum(dM_dz)
-                params[2] -= rate * np.sum(dM_db)
-        if converged:
+                #pdb.set_trace()
+                print(params)
+                print(rate * np.sum(dM_dN * 2.0 * chi / indict['error']))
+                print(rate * np.sum(dM_dz * 2.0 * chi / indict['error']))
+                print(rate * np.sum(dM_db * 2.0 * chi / indict['error']))
+                params[0] -= rate * np.sum(dM_dN * 2.0 * chi / indict['error'])
+                params[1] -= rate * np.sum(dM_dz * 2.0 * chi / indict['error'])
+                params[2] -= rate * np.sum(dM_db * 2.0 * chi / indict['error'])
+        if converged or itnum > 10:
             break
         itnum += 1
 
@@ -131,7 +135,7 @@ if plotit:
     md_tst,_,_,_ = voigt_spl(par, wv_arr)
     plt.plot(wv_arr, fx_arr, 'k-', drawstyle='steps')
     plt.plot(wv_arr, md_arr, 'r-')
-    plt.plot(wv_arr, md_tst, 'b-')
+    plt.plot(wv_arr, md_tst, 'b--')
     plt.plot(wv_arr, model, 'm--')
     plt.show()
     plt.clf()
