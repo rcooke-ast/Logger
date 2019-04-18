@@ -44,15 +44,12 @@ def voigt_spl(par, wavein, logn=True):
         cold = par[0]
     # Redshift
     zp1 = par[1] + 1.0
-    wv = par[3]
+    wvscl = 1.0 - wavein * 1.0E-8 / (zp1 * par[3])
     # Doppler parameter
-    bl = par[2] * wv / 2.99792458E5
-    a = par[5] * wv * wv / (3.76730313461770655E11 * bl)
-    cns = wv * wv * par[4] / (bl * 2.002134602291006E12)
+    a = par[5] * par[3] * 2.99792458E5 / (3.76730313461770655E11 * par[2])
+    cns = par[3] * par[4] * 2.99792458E5 / (par[2] * 2.002134602291006E12)
     cne = cold * cns
-    ww = (wavein * 1.0e-8) / zp1
-    v = wv * ww * ((1.0 / ww) - (1.0 / wv)) / bl
-    v *= -1
+    v = -2.99792458E5 * wvscl / par[2]
     sig_j = wofz(v + 1j * a).real#vfunc(v, a)
     dsig_dv = vfunc(v, a, dx=1)
     dsig_da = vfunc(v, a, dy=1)
@@ -80,12 +77,17 @@ step = 1.0E-10
 # Calculate the model
 par = np.append(params, [wave0, fval, gamma])
 model, sig_j, dsig_dv, dsig_da = voigt_spl(par, indict['wave'])
+
+plt.plot(wv_arr, md_arr, 'k-')
+plt.plot(wv_arr, model, 'r--')
+plt.show()
+
 # Calculate the chi-squared
 chi = (model - indict['flux']) / indict['error']
 csq_new = np.sum(chi ** 2)
 # Calculate the parameter derivates
 coldens = 10.0 ** params[0]
-Nloglin = coldens*np.log(10)
+dNdlogN = coldens*np.log(10)
 zp1 = 1.0 + params[1]
 bval = params[2]
 dcsq_dM = 2.0 * np.sum(chi / indict['error'])
@@ -93,7 +95,7 @@ k_j = fval * wave0 * 299792.458 / (2.002134602291006E12 * bval)
 c_b = (299792.458 / bval)
 wvscl = 1.0 - indict['wave'] * 1.0E-8 / (zp1 * wave0)
 fact = gamma * wave0 / 3.76730313461770655E11
-dM_dN = -model * k_j * sig_j * Nloglin
+dM_dN = -model * k_j * sig_j * dNdlogN
 dM_dz = model * k_j * coldens * (indict['wave']*1.0E-8/wave0) * c_b * dsig_dv / zp1 ** 2
 dM_db = model * k_j * (coldens / bval) * (sig_j + c_b * (-dsig_dv * wvscl + dsig_da * fact))
 
