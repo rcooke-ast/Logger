@@ -1642,7 +1642,7 @@ class macharc:
         self.rgiant = numpy.sqrt(self.maxnum) * 0.1
 
 
-def test_simple(nvoigt=4):
+def test_simple(nvoigt=2):
     # Generate some fake data
     snr = 30.0
     wv_arr = numpy.linspace(4860.0, 4865.0, 125)
@@ -1681,16 +1681,16 @@ def test_simple(nvoigt=4):
     fa = {'x': wv_arr, 'y': fx_arr, 'err': fe_arr}
 
     # Perform the fit
-    a = time.time()
+    atime = time.time()
     results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=1, autoderivative=False)
-    b = time.time()
+    btime = time.time()
     print(results['params'], results['perror'], results['errmsg'])
-    print(b-a)
-    c = time.time()
+    print(btime-atime)
+    ctime = time.time()
     results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=1, autoderivative=True)
-    d = time.time()
+    dtime = time.time()
     print(results['params'], results['perror'], results['errmsg'])
-    print(d-c)
+    print(dtime-ctime)
 
 
 if __name__ == "__main__":
