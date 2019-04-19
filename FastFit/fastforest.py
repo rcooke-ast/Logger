@@ -50,6 +50,51 @@ fval = 0.4164
 gamma = 6.265E8
 c = 299792.458
 beta = 3.76730313461770655E11
+vfwhm = 20.1   # FWHM in km/s
+const = (2.99792458E5 * (2.0 * numpy.sqrt(2.0 * numpy.log(2.0))))
+vsigd = vfwhm / const
+
+
+def convolve(y, x):
+    ysize = y.shape[0]
+    fsigd = 6.0 * vsigd
+    dwav = numpy.gradient(x) / x
+    df = int(numpy.min([numpy.int(numpy.ceil(fsigd / dwav).max()), ysize // 2 - 1]))
+    yval = numpy.zeros(2 * df + 1)
+    yval[df:2 * df + 1] = (x[df:2 * df + 1] / x[df] - 1.0) / vsigd
+    yval[:df] = (x[:df] / x[df] - 1.0) / vsigd
+    gaus = numpy.exp(-0.5 * yval * yval)
+    size = ysize + gaus.size - 1
+    fsize = 2 ** numpy.int(numpy.ceil(numpy.log2(size)))  # Use this size for a more efficient computation
+    conv = numpy.fft.fft(y, fsize, axis=0)
+    if y.ndim == 1:
+        conv *= numpy.fft.fft(gaus / gaus.sum(), fsize)
+    else:
+        conv *= numpy.fft.fft(gaus / gaus.sum(), fsize).reshape((fsize, 1))
+    ret = numpy.fft.ifft(conv, axis=0).real.copy()
+    del conv
+    if y.ndim == 1:
+        return ret[df:df + ysize]
+    else:
+        return ret[df:df + ysize, :]
+
+
+def convolve1d(y, x):
+    ysize = y.size
+    fsigd = 6.0 * vsigd
+    dwav = numpy.gradient(x) / x
+    df = int(numpy.min([numpy.int(numpy.ceil(fsigd / dwav).max()), ysize // 2 - 1]))
+    yval = numpy.zeros(2 * df + 1)
+    yval[df:2 * df + 1] = (x[df:2 * df + 1] / x[df] - 1.0) / vsigd
+    yval[:df] = (x[:df] / x[df] - 1.0) / vsigd
+    gaus = numpy.exp(-0.5 * yval * yval)
+    size = ysize + gaus.size - 1
+    fsize = 2 ** numpy.int(numpy.ceil(numpy.log2(size)))  # Use this size for a more efficient computation
+    conv = numpy.fft.fft(y, fsize)
+    conv *= numpy.fft.fft(gaus / gaus.sum(), fsize)
+    ret = numpy.fft.ifft(conv).real.copy()
+    del conv
+    return ret[df:df + ysize]
 
 
 def voigt(par, wavein, logn=True):
@@ -126,7 +171,7 @@ def voigt_deriv(par, wavein, logn=True):
     return numpy.exp(-1.0 * tau), dM_dlogN, dM_dz, dM_db
 
 
-def multi_voigt(p, x, fjac=None):
+def multi_voigt(p, x, err, fjac=None):
     model = numpy.ones(x.size)
     if fjac is None:
         for vv in range(p.size // 3):
@@ -139,13 +184,15 @@ def multi_voigt(p, x, fjac=None):
             fjac[:, 3 * vv] = dM_dlogN
             fjac[:, 3 * vv+1] = dM_dz
             fjac[:, 3 * vv+2] = dM_db
-    return model, fjac
+        fjac *= (-model / err).reshape((model.size, 1))
+        fjac = convolve(fjac, x)
+        #for ii in range(p.size):
+        #    fjac[:, ii] = convolve(fjac[:, ii], x)
+    return convolve(model, x), fjac
 
 
 def myfunct(p, fjac=None, x=None, y=None, err=None):
-    model, fjac = multi_voigt(p, x, fjac=fjac)
-    if fjac is not None:
-        fjac *= (-model/err).reshape((model.size, 1))
+    model, fjac = multi_voigt(p, x, err, fjac=fjac)
     # Non-negative status value means MPFIT should
     # continue, negative means stop the calculation.
     status = 0
@@ -1642,7 +1689,7 @@ class macharc:
         self.rgiant = numpy.sqrt(self.maxnum) * 0.1
 
 
-def test_simple(nvoigt=2):
+def test_simple(nvoigt=3):
     # Generate some fake data
     snr = 30.0
     wv_arr = numpy.linspace(4860.0, 4865.0, 125)
@@ -1657,6 +1704,7 @@ def test_simple(nvoigt=2):
         gss = (numpy.array([cold, zabs, bval]) - subs) * numpy.random.normal(1.0, 0.1, 3)
         p0 = numpy.append(p0, subs+gss)
 
+    md_arr = convolve(md_arr, wv_arr)
     fe_arr = numpy.ones(wv_arr.size) / snr
     fx_arr = numpy.random.normal(md_arr, fe_arr)
 
@@ -1682,15 +1730,16 @@ def test_simple(nvoigt=2):
 
     # Perform the fit
     atime = time.time()
-    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=1, autoderivative=False)
+    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=0, autoderivative=False)
     btime = time.time()
-    print(results['params'], results['perror'], results['errmsg'])
-    print(btime-atime)
+    #print(results['params'], results['perror'], results['errmsg'])
+    #print(btime-atime)
     ctime = time.time()
-    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=1, autoderivative=True)
+    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=0, autoderivative=True)
     dtime = time.time()
-    print(results['params'], results['perror'], results['errmsg'])
-    print(dtime-ctime)
+    #print(results['params'], results['perror'], results['errmsg'])
+    #print(dtime-ctime)
+    print((btime-atime)/(dtime-ctime))
 
 
 if __name__ == "__main__":
