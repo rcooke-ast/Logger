@@ -42,6 +42,7 @@ from matplotlib import pyplot as plt
 # Get a spline representation of the Voigt function
 from scipy.special import wofz
 import voigt_spline as vs
+from utilities import convolve
 vfunc = vs.generate_spline()
 
 # H I Lya params
@@ -51,50 +52,8 @@ gamma = 6.265E8
 c = 299792.458
 beta = 3.76730313461770655E11
 vfwhm = 20.1   # FWHM in km/s
-const = (2.99792458E5 * (2.0 * numpy.sqrt(2.0 * numpy.log(2.0))))
-vsigd = vfwhm / const
-
-
-def convolve(y, x):
-    ysize = y.shape[0]
-    fsigd = 6.0 * vsigd
-    dwav = numpy.gradient(x) / x
-    df = int(numpy.min([numpy.int(numpy.ceil(fsigd / dwav).max()), ysize // 2 - 1]))
-    yval = numpy.zeros(2 * df + 1)
-    yval[df:2 * df + 1] = (x[df:2 * df + 1] / x[df] - 1.0) / vsigd
-    yval[:df] = (x[:df] / x[df] - 1.0) / vsigd
-    gaus = numpy.exp(-0.5 * yval * yval)
-    size = ysize + gaus.size - 1
-    fsize = 2 ** numpy.int(numpy.ceil(numpy.log2(size)))  # Use this size for a more efficient computation
-    conv = numpy.fft.fft(y, fsize, axis=0)
-    if y.ndim == 1:
-        conv *= numpy.fft.fft(gaus / gaus.sum(), fsize)
-    else:
-        conv *= numpy.fft.fft(gaus / gaus.sum(), fsize).reshape((fsize, 1))
-    ret = numpy.fft.ifft(conv, axis=0).real.copy()
-    del conv
-    if y.ndim == 1:
-        return ret[df:df + ysize]
-    else:
-        return ret[df:df + ysize, :]
-
-
-def convolve1d(y, x):
-    ysize = y.size
-    fsigd = 6.0 * vsigd
-    dwav = numpy.gradient(x) / x
-    df = int(numpy.min([numpy.int(numpy.ceil(fsigd / dwav).max()), ysize // 2 - 1]))
-    yval = numpy.zeros(2 * df + 1)
-    yval[df:2 * df + 1] = (x[df:2 * df + 1] / x[df] - 1.0) / vsigd
-    yval[:df] = (x[:df] / x[df] - 1.0) / vsigd
-    gaus = numpy.exp(-0.5 * yval * yval)
-    size = ysize + gaus.size - 1
-    fsize = 2 ** numpy.int(numpy.ceil(numpy.log2(size)))  # Use this size for a more efficient computation
-    conv = numpy.fft.fft(y, fsize)
-    conv *= numpy.fft.fft(gaus / gaus.sum(), fsize)
-    ret = numpy.fft.ifft(conv).real.copy()
-    del conv
-    return ret[df:df + ysize]
+#const = (2.99792458E5 * (2.0 * numpy.sqrt(2.0 * numpy.log(2.0))))
+#vsigd = vfwhm / const
 
 
 def voigt(par, wavein, logn=True):
@@ -115,7 +74,7 @@ def voigt(par, wavein, logn=True):
     ww = (wavein * 1.0e-8) / zp1
     v = wv * ww * ((1.0 / ww) - (1.0 / wv)) / bl
     tau = cne * wofz(v + 1j * a).real
-    return numpy.exp(-1.0 * tau)
+    return tau
 
 
 def voigt_spl(par, wavein, logn=True):
@@ -140,7 +99,7 @@ def voigt_spl(par, wavein, logn=True):
     dsig_dv = vfunc(v, a, dx=1)
     dsig_da = vfunc(v, a, dy=1)
     tau = cne * sig_j
-    return numpy.exp(-1.0 * tau), sig_j, dsig_dv, dsig_da
+    return tau, sig_j, dsig_dv, dsig_da
 
 
 def voigt_deriv(par, wavein, logn=True):
@@ -168,27 +127,29 @@ def voigt_deriv(par, wavein, logn=True):
     dM_dlogN = -k_j * sig_j * dNdlogN
     dM_dz = k_j * cold * (wavein * 1.0E-8 / epar[0]) * c_b * dsig_dv / zp1 ** 2
     dM_db = k_j * (cold / par[2]) * (sig_j + c_b * (-dsig_dv * wvscl + dsig_da * fact))
-    return numpy.exp(-1.0 * tau), dM_dlogN, dM_dz, dM_db
+    return tau, dM_dlogN, dM_dz, dM_db
 
 
 def multi_voigt(p, x, err, fjac=None):
-    model = numpy.ones(x.size)
+    model_tau = numpy.zeros(x.size)
     if fjac is None:
         for vv in range(p.size // 3):
-            model *= voigt(p[3 * vv:3 * (vv + 1)], x)
+            model_tau += voigt(p[3 * vv:3 * (vv + 1)], x)
+        model = numpy.exp(-model_tau)
     else:
         fjac = numpy.zeros([x.size, p.size], dtype=numpy.float64)
         for vv in range(p.size//3):
             mval, dM_dlogN, dM_dz, dM_db = voigt_deriv(p[3*vv:3*(vv+1)], x)
-            model *= mval
+            model_tau += mval
             fjac[:, 3 * vv] = dM_dlogN
             fjac[:, 3 * vv+1] = dM_dz
             fjac[:, 3 * vv+2] = dM_db
-        fjac *= (-model / err).reshape((model.size, 1))
-        fjac = convolve(fjac, x)
+        model = numpy.exp(-model_tau)
+        fjac *= (-model / err).reshape((model.size, 1))  # Make sure the model is convolved after this step
+        fjac = convolve(fjac, x, vfwhm)
         #for ii in range(p.size):
         #    fjac[:, ii] = convolve(fjac[:, ii], x)
-    return convolve(model, x), fjac
+    return convolve(model, x, vfwhm), fjac
 
 
 def myfunct(p, fjac=None, x=None, y=None, err=None):
@@ -1689,16 +1650,16 @@ class macharc:
         self.rgiant = numpy.sqrt(self.maxnum) * 0.1
 
 
-def test_simple(nvoigt=3):
+def test_simple(nvoigt=2):
     # Generate some fake data
     snr = 30.0
-    wv_arr = numpy.linspace(4860.0, 4865.0, 125)
+    wv_arr = numpy.linspace(4800.0, 4920.0, 2500)
     md_arr = numpy.ones(wv_arr.size)
     p0 = numpy.array([])
     subs = numpy.array([13.5, 3.0, 10.0])
     for nn in range(nvoigt):
         cold = numpy.random.uniform(12.0, 15.0)
-        zabs = numpy.random.uniform(2.999, 3.001)
+        zabs = numpy.random.uniform(2.99, 3.01)
         bval = numpy.random.uniform(5.0, 20.0)
         md_arr *= voigt([cold, zabs, bval], wv_arr)
         gss = (numpy.array([cold, zabs, bval]) - subs) * numpy.random.normal(1.0, 0.1, 3)
@@ -1730,16 +1691,17 @@ def test_simple(nvoigt=3):
 
     # Perform the fit
     atime = time.time()
-    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=0, autoderivative=False)
+    results_a = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=0, autoderivative=False)
     btime = time.time()
     #print(results['params'], results['perror'], results['errmsg'])
     #print(btime-atime)
     ctime = time.time()
-    results = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=0, autoderivative=True)
+    results_b = chisqmin(myfunct, p0, parinfo=param_info, functkw=fa, verbose=0, autoderivative=True)
     dtime = time.time()
     #print(results['params'], results['perror'], results['errmsg'])
     #print(dtime-ctime)
-    print((btime-atime)/(dtime-ctime))
+    print((results_a['params']-results_b['params'])/results_b['perror'])
+    print((btime-atime)/(dtime-ctime), (btime-atime), (dtime-ctime))
 
 
 if __name__ == "__main__":
