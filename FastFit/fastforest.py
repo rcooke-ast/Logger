@@ -1654,22 +1654,23 @@ def test_simple(nvoigt=2):
     # Generate some fake data
     snr = 30.0
     wv_arr = numpy.linspace(4800.0, 4920.0, 2500)
-    md_arr = numpy.ones(wv_arr.size)
+    md_arr = numpy.zeros(wv_arr.size)
     p0 = numpy.array([])
     subs = numpy.array([13.5, 3.0, 10.0])
     for nn in range(nvoigt):
         cold = numpy.random.uniform(12.0, 15.0)
         zabs = numpy.random.uniform(2.99, 3.01)
         bval = numpy.random.uniform(5.0, 20.0)
-        md_arr *= voigt([cold, zabs, bval], wv_arr)
+        md_arr += voigt([cold, zabs, bval], wv_arr)
         gss = (numpy.array([cold, zabs, bval]) - subs) * numpy.random.normal(1.0, 0.1, 3)
         p0 = numpy.append(p0, subs+gss)
 
-    md_arr = convolve(md_arr, wv_arr)
+    md_arr = numpy.exp(-1.0*md_arr)
+    md_arr = convolve(md_arr, wv_arr, vfwhm)
     fe_arr = numpy.ones(wv_arr.size) / snr
     fx_arr = numpy.random.normal(md_arr, fe_arr)
 
-    plt.plot(wv_arr, fx_arr, 'k-', drawstyle='steps')
+    #plt.plot(wv_arr, fx_arr, 'k-', drawstyle='steps')
     plt.plot(wv_arr, md_arr, 'r-')
     plt.show()
 
