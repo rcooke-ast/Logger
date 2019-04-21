@@ -145,6 +145,9 @@ def generate_fakespectra(zqso, wave=None, subwave=None, nsubpix=10, snr=30.0, pl
 if __name__ == "__main__":
     zem = 3.0
     mock_spec, HI_comps = generate_fakespectra(zem, plot_spec=True)
+    pdb.set_trace()
+    plt.plot(HI_comps['lgNHI'].data, HI_comps['bval'].data, 'bx')
+    plt.show()
     #print(HI_comps['lgNHI'])
     #print(HI_comps['z'])
     #print(HI_comps['bval'])
