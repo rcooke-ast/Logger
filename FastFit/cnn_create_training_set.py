@@ -1,9 +1,10 @@
 import pdb
 import numpy as np
+import astropy.units as u
 from utilities import generate_fakespectra
 
-Lya = 1215.6701
-Lyb = 1025.7223
+Lya = 1215.6701 * u.AA
+Lyb = 1025.7223 * u.AA
 
 
 def cnn_numabs(zem=3.0, numseg=64, numspec=1):
@@ -23,7 +24,7 @@ def cnn_numabs(zem=3.0, numseg=64, numspec=1):
         xdata = np.zeros((numsamp, numseg), dtype=np.float)  # Segments
         ydata = np.zeros(numsamp, dtype=np.int)   # Labels
         remdr = npix % numseg
-        ww = ww[remdr:]
+        ww = ww[remdr-1:]
         zmin = mock_spec.wavelength[ww[0]] / Lya - 1.0
         zarr = HI_comps['z'].data
         for ll in range(numsamp):
@@ -34,8 +35,8 @@ def cnn_numabs(zem=3.0, numseg=64, numspec=1):
             zmin = zmax
         # TODO :: Need to append final output data together if more than one spectra are generated
     # Save the data
-    np.save("train_data/cnn_numabs_spects")
-    np.save("train_data/cnn_numabs_labels")
+    np.save("train_data/cnn_numabs_spects", xdata)
+    np.save("train_data/cnn_numabs_labels", ydata)
 
 
 if __name__ == "__main__":
