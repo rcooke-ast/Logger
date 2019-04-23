@@ -115,7 +115,7 @@ if __name__ == "__main__":
         zem = 3.0
         snr = 30
         numseg = 512
-        numspec = 2#125
+        numspec = 200
         if multip:
             nruns = 4
             pool = Pool(processes=cpu_count())
@@ -147,7 +147,6 @@ if __name__ == "__main__":
                     zout = getVal[3].copy()
                     Nout = getVal[4].copy()
                     bout = getVal[5].copy()
-                    print(numNzb_all, zshp)
                     if numNzb_all < zshp:
                         zdata_all = np.pad(zdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
                         Ndata_all = np.pad(Ndata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
@@ -158,12 +157,9 @@ if __name__ == "__main__":
                         zout = np.pad(zout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
                         Nout = np.pad(Nout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
                         bout = np.pad(bout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
-                    try:
-                        zdata_all = np.append(zdata_all, zout, axis=0)
-                        Ndata_all = np.append(Ndata_all, Nout, axis=0)
-                        bdata_all = np.append(bdata_all, bout, axis=0)
-                    except:
-                        pdb.set_trace()
+                    zdata_all = np.append(zdata_all, zout, axis=0)
+                    Ndata_all = np.append(Ndata_all, Nout, axis=0)
+                    bdata_all = np.append(bdata_all, bout, axis=0)
         else:
             fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all =\
                 cnn_numabs(zem=zem, numseg=numseg, numspec=numspec, snr=snr)
@@ -179,7 +175,6 @@ if __name__ == "__main__":
         np.save("train_data/cnn_zvals_{0:s}".format(extstr), zdata_all)
         np.save("train_data/cnn_Nvals_{0:s}".format(extstr), Ndata_all)
         np.save("train_data/cnn_bvals_{0:s}".format(extstr), bdata_all)
-        pdb.set_trace()
     else:
         tottime = time.time() - starttime
     print("Total execution time = {0:f} minutes".format(tottime / 60.0))
