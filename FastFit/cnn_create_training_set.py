@@ -144,6 +144,9 @@ if __name__ == "__main__":
                     ldata_all = np.append(ldata_all, getVal[2].copy(), axis=0)
                     # Pad arrays as needed
                     zshp = getVal[3].shape[1]
+                    zout = getVal[3].copy()
+                    Nout = getVal[4].copy()
+                    bout = getVal[5].copy()
                     if numNzb_all < zshp:
                         zdata_all = np.pad(zdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
                         Ndata_all = np.pad(Ndata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
@@ -151,12 +154,12 @@ if __name__ == "__main__":
                         # Update the max array size
                         numNzb_all = zshp
                     elif numNzb_all > zshp:
-                        getVal[3] = np.pad(getVal[3], ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
-                        getVal[4] = np.pad(getVal[4], ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
-                        getVal[5] = np.pad(getVal[5], ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
-                    zdata_all = np.append(zdata_all, getVal[3].copy(), axis=0)
-                    Ndata_all = np.append(Ndata_all, getVal[4].copy(), axis=0)
-                    bdata_all = np.append(bdata_all, getVal[5].copy(), axis=0)
+                        zout = np.pad(zout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                        Nout = np.pad(Nout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                        bout = np.pad(bout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                    zdata_all = np.append(zdata_all, zout, axis=0)
+                    Ndata_all = np.append(Ndata_all, Nout, axis=0)
+                    bdata_all = np.append(bdata_all, bout, axis=0)
         else:
             fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all =\
                 cnn_numabs(zem=zem, numseg=numseg, numspec=numspec, snr=snr)
