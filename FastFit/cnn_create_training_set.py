@@ -121,11 +121,11 @@ if __name__ == "__main__":
         # Generate data for a CNN that detects the number of absorption features within a given window
         if multip:
             nruns = 4
-            pool = Pool(processes=cpu_count()//2)
+            pool = Pool(processes=cpu_count())
             async_results = []
             zem = 3.0
             numseg = 512
-            numspec = 2#125
+            numspec = 125
             for jj in range(nruns):
                 seed = np.arange(numspec) + jj * numspec
                 async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, False)))
@@ -163,12 +163,6 @@ if __name__ == "__main__":
                     zdata_all = np.append(zdata_all, getVal[3].copy(), axis=0)
                     Ndata_all = np.append(Ndata_all, getVal[4].copy(), axis=0)
                     bdata_all = np.append(bdata_all, getVal[5].copy(), axis=0)
-                # if jj == 0:
-                #     xdata_all = getVal[0].copy()
-                #     ydata_all = getVal[1].copy()
-                # else:
-                #     xdata_all = np.append(xdata_all, getVal[0].copy(), axis=0)
-                #     ydata_all = np.append(ydata_all, getVal[1].copy(), axis=0)
             print("Generated {0:d} input segments of length {1:d} for training".format(fdata_all.shape[0], numseg))
             print("This requires {0:f} MB of memory.".format(fdata_all.nbytes / 1.0E6))
             # Save the data into a single file
