@@ -10,11 +10,12 @@ Lya = 1215.6701 * u.AA
 Lyb = 1025.7223 * u.AA
 
 
-def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotsegs=False):
+def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, snr=30, plotsegs=False):
     """
     zem = qso redshift
     numseg = number of pixels in a segment (i.e. the number of pixels in a single "sample" in Keras-speak)
     numspec = number of spectra to generate
+    seed = seed for pseudo random number
     """
     # First generate N spectra
     numNzb_all = 0
@@ -25,7 +26,7 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
         elif type(seed) is np.ndarray:
             seedval = seed[dd]
         print("Using seed={0:d} for spectrum {1:d}/{2:d}".format(seedval, dd+1, numspec))
-        mock_spec, HI_comps = generate_fakespectra(zem, plot_spec=False, seed=seedval)
+        mock_spec, HI_comps = generate_fakespectra(zem, plot_spec=False, snr=snr, seed=seedval)
         # Determine number of pixels between the QSO Lya and Lyb lines
         ww = np.where((mock_spec.wavelength > Lyb*(1.0+zem)) &
                       (mock_spec.wavelength < Lya*(1.0+zem)))[0]
@@ -34,7 +35,7 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
         # print(HI_comps['bval'])
         zarr = HI_comps['z'].data
         Narr = HI_comps['lgNHI'].data
-        barr = HI_comps['bval'].data
+        barr = HI_comps['bval'].value
         wz = np.where((zarr > Lyb*(1.0+zem)/Lya - 1.0) * (zarr < zem))
         npix = ww.size
         numsamp = npix//numseg  # Total number of samples to generate
@@ -42,9 +43,9 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
         fdata = np.zeros((numsamp, numseg), dtype=np.float)  # Flux Segments
         wdata = np.zeros((numsamp, numseg), dtype=np.float)  # Wavelength Segments
         ldata = np.zeros(numsamp, dtype=np.int)   # Labels (number of absorption lines)
-        zdata = -1*np.ones((numsamp, numNzb), dtype=np.int)   # Labels (redshift)
-        Ndata = -1*np.ones((numsamp, numNzb), dtype=np.int)   # Labels (column density)
-        bdata = -1*np.ones((numsamp, numNzb), dtype=np.int)   # Labels (Doppler parameter)
+        zdata = -1*np.ones((numsamp, numNzb), dtype=np.float)   # Labels (redshift)
+        Ndata = -1*np.ones((numsamp, numNzb), dtype=np.float)   # Labels (column density)
+        bdata = -1*np.ones((numsamp, numNzb), dtype=np.float)   # Labels (Doppler parameter)
         remdr = npix % numseg
         ww = ww[remdr-1:]
         zmin = mock_spec.wavelength[ww[0]] / Lya - 1.0
@@ -113,7 +114,7 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
 if __name__ == "__main__":
     # Set some starting variables
     testdata = 0
-    multip = True  # Multiprocess?
+    multip = False  # Multiprocess?
     starttime = time.time()
 
     # Now generate the test data
@@ -124,11 +125,12 @@ if __name__ == "__main__":
             pool = Pool(processes=cpu_count())
             async_results = []
             zem = 3.0
+            snr = 30.0
             numseg = 512
             numspec = 125
             for jj in range(nruns):
                 seed = np.arange(numspec) + jj * numspec
-                async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, False)))
+                async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, False, snr)))
             pool.close()
             pool.join()
             map(ApplyResult.wait, async_results)
