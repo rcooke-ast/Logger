@@ -176,5 +176,6 @@ if __name__ == "__main__":
         np.save("train_data/cnn_Nvals_{0:s}".format(extstr), Ndata_all)
         np.save("train_data/cnn_bvals_{0:s}".format(extstr), bdata_all)
     else:
-        tottime = time.time() - starttime
+        pass
+    tottime = time.time() - starttime
     print("Total execution time = {0:f} minutes".format(tottime / 60.0))
