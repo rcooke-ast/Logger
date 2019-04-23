@@ -137,7 +137,7 @@ if __name__ == "__main__":
                     zdata_all = getVal[3].copy()
                     Ndata_all = getVal[4].copy()
                     bdata_all = getVal[5].copy()
-                    numNzb_all = zdata_all.shape[0]
+                    numNzb_all = zdata_all.shape[1]
                 else:
                     fdata_all = np.append(fdata_all, getVal[0].copy(), axis=0)
                     wdata_all = np.append(wdata_all, getVal[1].copy(), axis=0)
@@ -147,6 +147,7 @@ if __name__ == "__main__":
                     zout = getVal[3].copy()
                     Nout = getVal[4].copy()
                     bout = getVal[5].copy()
+                    print(numNzb_all, zshp)
                     if numNzb_all < zshp:
                         zdata_all = np.pad(zdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
                         Ndata_all = np.pad(Ndata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
@@ -157,9 +158,12 @@ if __name__ == "__main__":
                         zout = np.pad(zout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
                         Nout = np.pad(Nout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
                         bout = np.pad(bout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
-                    zdata_all = np.append(zdata_all, zout, axis=0)
-                    Ndata_all = np.append(Ndata_all, Nout, axis=0)
-                    bdata_all = np.append(bdata_all, bout, axis=0)
+                    try:
+                        zdata_all = np.append(zdata_all, zout, axis=0)
+                        Ndata_all = np.append(Ndata_all, Nout, axis=0)
+                        bdata_all = np.append(bdata_all, bout, axis=0)
+                    except:
+                        pdb.set_trace()
         else:
             fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all =\
                 cnn_numabs(zem=zem, numseg=numseg, numspec=numspec, snr=snr)
