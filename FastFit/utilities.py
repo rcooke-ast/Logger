@@ -139,7 +139,7 @@ def generate_fakespectra(zqso, wave=None, subwave=None, nsubpix=10, snr=30.0, pl
         plt.plot(conti.wavelength, conti.flux, 'm-')
         plt.plot(conti.wavelength, convcont, 'c-')
         plt.show()
-    return mock_spec, HI_comps
+    return noisy_spec, HI_comps
 
 
 if __name__ == "__main__":
