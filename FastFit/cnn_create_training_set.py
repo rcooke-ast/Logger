@@ -17,6 +17,7 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
     numspec = number of spectra to generate
     """
     # First generate N spectra
+    numNzb_all = 0
     for dd in range(numspec):
         seedval = dd
         if type(seed) is int:
@@ -28,19 +29,45 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
         # Determine number of pixels between the QSO Lya and Lyb lines
         ww = np.where((mock_spec.wavelength > Lyb*(1.0+zem)) &
                       (mock_spec.wavelength < Lya*(1.0+zem)))[0]
+        # print(HI_comps['lgNHI'])
+        # print(HI_comps['z'])
+        # print(HI_comps['bval'])
+        zarr = HI_comps['z'].data
+        Narr = HI_comps['lgNHI'].data
+        barr = HI_comps['bval'].data
+        wz = np.where((zarr > Lyb*(1.0+zem)/Lya - 1.0) * (zarr < zem))
         npix = ww.size
         numsamp = npix//numseg  # Total number of samples to generate
-        xdata = np.zeros((numsamp, numseg), dtype=np.float)  # Segments
-        ydata = np.zeros(numsamp, dtype=np.int)   # Labels
+        numNzb = max(numNzb_all, wz[0].size//numsamp)  # The maximum number of lines in any segment is guessed to be the average
+        fdata = np.zeros((numsamp, numseg), dtype=np.float)  # Flux Segments
+        wdata = np.zeros((numsamp, numseg), dtype=np.float)  # Wavelength Segments
+        ldata = np.zeros(numsamp, dtype=np.int)   # Labels (number of absorption lines)
+        zdata = -1*np.ones((numsamp, numNzb), dtype=np.int)   # Labels (redshift)
+        Ndata = -1*np.ones((numsamp, numNzb), dtype=np.int)   # Labels (column density)
+        bdata = -1*np.ones((numsamp, numNzb), dtype=np.int)   # Labels (Doppler parameter)
         remdr = npix % numseg
         ww = ww[remdr-1:]
         zmin = mock_spec.wavelength[ww[0]] / Lya - 1.0
-        zarr = HI_comps['z'].data
         for ll in range(numsamp):
             zmax = mock_spec.wavelength[ww[(ll+1) * numseg]] / Lya - 1.0
-            wz = np.where((zarr > zmin) & (zarr <= zmax))[0]
-            xdata[ll, :] = mock_spec.flux[ww[ll * numseg]:ww[(ll+1) * numseg]]
-            ydata[ll] = wz.size
+            wz = np.where((zarr > zmin) & (zarr <= zmax))
+            wzsz = wz[0].size
+            fdata[ll, :] = mock_spec.flux[ww[ll * numseg]:ww[(ll+1) * numseg]]
+            wdata[ll, :] = mock_spec.wavelength[ww[ll * numseg]:ww[(ll+1) * numseg]]
+            ldata[ll] = wzsz
+            # Save the details of all absorption lines
+            if wzsz > numNzb:
+                # First pad the arrays so the new values can fit
+                zdata = np.pad(zdata, ((0, 0), (0, numNzb-wzsz)), 'constant', constant_values=-1)
+                Ndata = np.pad(Ndata, ((0, 0), (0, numNzb-wzsz)), 'constant', constant_values=-1)
+                bdata = np.pad(bdata, ((0, 0), (0, numNzb-wzsz)), 'constant', constant_values=-1)
+                # Reset the size of the array
+                numNzb = wzsz
+            # Set the array values
+            zdata[ll, :wzsz] = zarr[wz]
+            Ndata[ll, :wzsz] = Narr[wz]
+            bdata[ll, :wzsz] = barr[wz]
+            # Reset the minimum redshift
             zmin = zmax
             if plotsegs:
                 plt.clf()
@@ -49,20 +76,38 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, plotseg
                 plt.show()
         # Store the data in the master arrays
         if dd == 0:
-            xdata_all = xdata.copy()
-            ydata_all = ydata.copy()
+            fdata_all = fdata.copy()
+            wdata_all = wdata.copy()
+            ldata_all = ldata.copy()
+            zdata_all = zdata.copy()
+            Ndata_all = Ndata.copy()
+            bdata_all = bdata.copy()
+            numNzb_all = numNzb
         else:
-            xdata_all = np.append(xdata_all, xdata, axis=0)
-            ydata_all = np.append(ydata_all, ydata, axis=0)
+            fdata_all = np.append(fdata_all, fdata, axis=0)
+            wdata_all = np.append(wdata_all, wdata, axis=0)
+            ldata_all = np.append(ldata_all, ldata, axis=0)
+            # Pad arrays as needed
+            zshp = zdata.shape[1]
+            if numNzb_all < zshp:
+                zdata_all = np.pad(zdata_all, ((0, 0), (0, zshp-numNzb_all)), 'constant', constant_values=-1)
+                Ndata_all = np.pad(Ndata_all, ((0, 0), (0, zshp-numNzb_all)), 'constant', constant_values=-1)
+                bdata_all = np.pad(bdata_all, ((0, 0), (0, zshp-numNzb_all)), 'constant', constant_values=-1)
+                # Update the max array size
+                numNzb_all = zshp
+            zdata_all = np.append(zdata_all, zdata, axis=0)
+            Ndata_all = np.append(Ndata_all, Ndata, axis=0)
+            bdata_all = np.append(bdata_all, bdata, axis=0)
+
     if savedata:
-        print("Generated {0:d} input segments of length {1:d} for training".format(xdata_all.shape[0], numseg))
-        print("This requires {0:f} MB of memory.".format(xdata_all.nbytes/1.0E6))
+        print("Generated {0:d} input segments of length {1:d} for training".format(fdata_all.shape[0], numseg))
+        print("This requires {0:f} MB of memory.".format(fdata_all.nbytes/1.0E6))
         # Save the data
-        np.save("train_data/cnn_numabs_spects", xdata_all)
-        np.save("train_data/cnn_numabs_labels", ydata_all)
+        np.save("train_data/cnn_numabs_spects", fdata_all)
+        np.save("train_data/cnn_numabs_labels", ldata_all)
         return
     else:
-        return xdata_all, ydata_all
+        return fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all
 
 
 if __name__ == "__main__":
@@ -80,7 +125,7 @@ if __name__ == "__main__":
             async_results = []
             zem = 3.0
             numseg = 512
-            numspec = 125
+            numspec = 2#125
             for jj in range(nruns):
                 seed = np.arange(numspec) + jj * numspec
                 async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, False)))
@@ -90,17 +135,50 @@ if __name__ == "__main__":
             # Collect the returned data
             for jj in range(nruns):
                 getVal = async_results[jj].get()
+                # Store the data in the master arrays
                 if jj == 0:
-                    xdata_all = getVal[0].copy()
-                    ydata_all = getVal[1].copy()
+                    fdata_all = getVal[0].copy()
+                    wdata_all = getVal[1].copy()
+                    ldata_all = getVal[2].copy()
+                    zdata_all = getVal[3].copy()
+                    Ndata_all = getVal[4].copy()
+                    bdata_all = getVal[5].copy()
+                    numNzb_all = zdata_all.shape[0]
                 else:
-                    xdata_all = np.append(xdata_all, getVal[0].copy(), axis=0)
-                    ydata_all = np.append(ydata_all, getVal[1].copy(), axis=0)
-            print("Generated {0:d} input segments of length {1:d} for training".format(xdata_all.shape[0], numseg))
-            print("This requires {0:f} MB of memory.".format(xdata_all.nbytes / 1.0E6))
+                    fdata_all = np.append(fdata_all, getVal[0].copy(), axis=0)
+                    wdata_all = np.append(wdata_all, getVal[1].copy(), axis=0)
+                    ldata_all = np.append(ldata_all, getVal[2].copy(), axis=0)
+                    # Pad arrays as needed
+                    zshp = getVal[3].shape[1]
+                    if numNzb_all < zshp:
+                        zdata_all = np.pad(zdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
+                        Ndata_all = np.pad(Ndata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
+                        bdata_all = np.pad(bdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
+                        # Update the max array size
+                        numNzb_all = zshp
+                    elif numNzb_all > zshp:
+                        getVal[3] = np.pad(getVal[3], ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                        getVal[4] = np.pad(getVal[4], ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                        getVal[5] = np.pad(getVal[5], ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                    zdata_all = np.append(zdata_all, getVal[3].copy(), axis=0)
+                    Ndata_all = np.append(Ndata_all, getVal[4].copy(), axis=0)
+                    bdata_all = np.append(bdata_all, getVal[5].copy(), axis=0)
+                # if jj == 0:
+                #     xdata_all = getVal[0].copy()
+                #     ydata_all = getVal[1].copy()
+                # else:
+                #     xdata_all = np.append(xdata_all, getVal[0].copy(), axis=0)
+                #     ydata_all = np.append(ydata_all, getVal[1].copy(), axis=0)
+            print("Generated {0:d} input segments of length {1:d} for training".format(fdata_all.shape[0], numseg))
+            print("This requires {0:f} MB of memory.".format(fdata_all.nbytes / 1.0E6))
             # Save the data into a single file
-            np.save("train_data/cnn_numabs_spects", xdata_all)
-            np.save("train_data/cnn_numabs_labels", ydata_all)
+            zstr = "zem{0:.2f}".format(zem)
+            np.save("train_data/cnn_fluxspec_{0:s}".format(zstr), fdata_all)
+            np.save("train_data/cnn_wavespec_{0:s}".format(zstr), wdata_all)
+            np.save("train_data/cnn_numbrabs_{0:s}".format(zstr), ldata_all)
+            np.save("train_data/cnn_zvals_{0:s}".format(zstr), zdata_all)
+            np.save("train_data/cnn_Nvals_{0:s}".format(zstr), Ndata_all)
+            np.save("train_data/cnn_bvals_{0:s}".format(zstr), bdata_all)
         else:
             cnn_numabs(numspec=10)
     tottime = time.time() - starttime
