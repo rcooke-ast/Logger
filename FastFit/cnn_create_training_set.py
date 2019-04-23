@@ -10,7 +10,7 @@ Lya = 1215.6701 * u.AA
 Lyb = 1025.7223 * u.AA
 
 
-def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, snr=30, plotsegs=False):
+def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, snr=30, plotsegs=False):
     """
     zem = qso redshift
     numseg = number of pixels in a segment (i.e. the number of pixels in a single "sample" in Keras-speak)
@@ -59,9 +59,9 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, snr=30,
             # Save the details of all absorption lines
             if wzsz > numNzb:
                 # First pad the arrays so the new values can fit
-                zdata = np.pad(zdata, ((0, 0), (0, numNzb-wzsz)), 'constant', constant_values=-1)
-                Ndata = np.pad(Ndata, ((0, 0), (0, numNzb-wzsz)), 'constant', constant_values=-1)
-                bdata = np.pad(bdata, ((0, 0), (0, numNzb-wzsz)), 'constant', constant_values=-1)
+                zdata = np.pad(zdata, ((0, 0), (0, wzsz-numNzb)), 'constant', constant_values=-1)
+                Ndata = np.pad(Ndata, ((0, 0), (0, wzsz-numNzb)), 'constant', constant_values=-1)
+                bdata = np.pad(bdata, ((0, 0), (0, wzsz-numNzb)), 'constant', constant_values=-1)
                 # Reset the size of the array
                 numNzb = wzsz
             # Set the array values
@@ -100,37 +100,29 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, savedata=True, snr=30,
             Ndata_all = np.append(Ndata_all, Ndata, axis=0)
             bdata_all = np.append(bdata_all, bdata, axis=0)
 
-    if savedata:
-        print("Generated {0:d} input segments of length {1:d} for training".format(fdata_all.shape[0], numseg))
-        print("This requires {0:f} MB of memory.".format(fdata_all.nbytes/1.0E6))
-        # Save the data
-        np.save("train_data/cnn_numabs_spects", fdata_all)
-        np.save("train_data/cnn_numabs_labels", ldata_all)
-        return
-    else:
-        return fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all
+    return fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all
 
 
 if __name__ == "__main__":
     # Set some starting variables
     testdata = 0
-    multip = False  # Multiprocess?
+    multip = True  # Multiprocess?
     starttime = time.time()
 
     # Now generate the test data
     if testdata == 0:
         # Generate data for a CNN that detects the number of absorption features within a given window
+        zem = 3.0
+        snr = 30
+        numseg = 512
+        numspec = 2#125
         if multip:
             nruns = 4
             pool = Pool(processes=cpu_count())
             async_results = []
-            zem = 3.0
-            snr = 30.0
-            numseg = 512
-            numspec = 125
             for jj in range(nruns):
                 seed = np.arange(numspec) + jj * numspec
-                async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, False, snr)))
+                async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, snr)))
             pool.close()
             pool.join()
             map(ApplyResult.wait, async_results)
@@ -165,17 +157,22 @@ if __name__ == "__main__":
                     zdata_all = np.append(zdata_all, getVal[3].copy(), axis=0)
                     Ndata_all = np.append(Ndata_all, getVal[4].copy(), axis=0)
                     bdata_all = np.append(bdata_all, getVal[5].copy(), axis=0)
-            print("Generated {0:d} input segments of length {1:d} for training".format(fdata_all.shape[0], numseg))
-            print("This requires {0:f} MB of memory.".format(fdata_all.nbytes / 1.0E6))
-            # Save the data into a single file
-            zstr = "zem{0:.2f}".format(zem)
-            np.save("train_data/cnn_fluxspec_{0:s}".format(zstr), fdata_all)
-            np.save("train_data/cnn_wavespec_{0:s}".format(zstr), wdata_all)
-            np.save("train_data/cnn_numbrabs_{0:s}".format(zstr), ldata_all)
-            np.save("train_data/cnn_zvals_{0:s}".format(zstr), zdata_all)
-            np.save("train_data/cnn_Nvals_{0:s}".format(zstr), Ndata_all)
-            np.save("train_data/cnn_bvals_{0:s}".format(zstr), bdata_all)
         else:
-            cnn_numabs(numspec=10)
-    tottime = time.time() - starttime
+            fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all =\
+                cnn_numabs(zem=zem, numseg=numseg, numspec=numspec, snr=snr)
+        print("Generated {0:d} input segments of length {1:d} for training".format(fdata_all.shape[0], numseg))
+        print("This requires {0:f} MB of memory.".format(fdata_all.nbytes / 1.0E6))
+        # Save the data into a single file
+        zstr = "zem{0:.2f}".format(zem)
+        sstr = "snr{0:d}".format(int(snr))
+        extstr = "{0:s}_{1:s}".format(zstr, sstr)
+        np.save("train_data/cnn_fluxspec_{0:s}".format(extstr), fdata_all)
+        np.save("train_data/cnn_wavespec_{0:s}".format(extstr), wdata_all)
+        np.save("train_data/cnn_numbrabs_{0:s}".format(extstr), ldata_all)
+        np.save("train_data/cnn_zvals_{0:s}".format(extstr), zdata_all)
+        np.save("train_data/cnn_Nvals_{0:s}".format(extstr), Ndata_all)
+        np.save("train_data/cnn_bvals_{0:s}".format(extstr), bdata_all)
+        pdb.set_trace()
+    else:
+        tottime = time.time() - starttime
     print("Total execution time = {0:f} minutes".format(tottime / 60.0))
