@@ -7,9 +7,31 @@ from pyigm.fN.mockforest import mk_mock
 from pyigm.continuum import quasar as pycq
 from linetools.spectra.xspectrum1d import XSpectrum1D
 from scipy import interpolate
+from astropy.io.votable import parse_single_table
 
 # Set some constants
 const = (2.99792458E5 * (2.0 * np.sqrt(2.0 * np.log(2.0))))
+
+
+def load_atomic(return_HIwav=True):
+    """
+    Load the atomic transitions data
+    """
+    dir = "/Users/rcooke/Software/ALIS/alis/data/"
+    atmname = "atomic.xml"
+    print("Loading atomic data")
+    # If the user specifies the atomic data file, make sure that it exists
+    table = parse_single_table(dir+atmname)
+    isotope = table.array['MassNumber'].astype("|S3").astype(np.object)+table.array['Element']
+    atmdata = dict({})
+    atmdata['Ion'] = np.array(isotope+b"_"+table.array['Ion']).astype(np.str)
+    atmdata['Wavelength'] = np.array(table.array['RestWave'])
+    if return_HIwav:
+        ww = np.where(atmdata["Ion"] == "1H_I")
+        wavs = atmdata["Wavelength"][ww][3:]
+        return wavs*u.AA
+    else:
+        return atmdata
 
 
 def get_binsize(wave, bintype="km/s", maxonly=False):
