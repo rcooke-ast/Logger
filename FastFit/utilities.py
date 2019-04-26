@@ -98,6 +98,10 @@ def rebin_subpix(flux, nsubpix=10):
 
 
 def generate_fakespectra(zqso, wave=None, subwave=None, nsubpix=10, snr=30.0, plot_spec=False, seed=1234, vfwhm=7.0):
+    add_noise = True
+    if snr <= 0.0:
+        add_noise = False
+        snr = 1.0
     # Get a random state so that the noise and components can be reproduced
     rstate = np.random.RandomState(seed)
     # Define the wavelength coverage
@@ -139,7 +143,10 @@ def generate_fakespectra(zqso, wave=None, subwave=None, nsubpix=10, snr=30.0, pl
         plt.plot(conti.wavelength, conti.flux, 'm-')
         plt.plot(conti.wavelength, convcont, 'c-')
         plt.show()
-    return noisy_spec, HI_comps
+    if add_noise:
+        return noisy_spec, HI_comps
+    else:
+        return mock_spec, HI_comps
 
 
 if __name__ == "__main__":
