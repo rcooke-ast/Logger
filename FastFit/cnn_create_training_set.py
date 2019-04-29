@@ -12,6 +12,7 @@ atomic = load_atomic()
 
 def collect_data(zem, snr, numwav, nruns, rmdata=False):
     print("Collecting the data into a single file")
+    rmfiles = ["fluxspec", "wavespec", "zvals", "Nvals", "bvals"]
     for numseg in numwav:
         # Load the data
         for nrun in range(nruns):
@@ -71,8 +72,10 @@ def collect_data(zem, snr, numwav, nruns, rmdata=False):
                 sstr = "snr{0:d}".format(int(snr))
                 nstr = "npx{0:d}".format(int(numseg))
                 extstr = "{0:s}_{1:s}_{2:s}_nrun{3:d}".format(zstr, sstr, nstr, nrun)
-                fname = "train_data/cnn_img_fluxspec_{0:s}".format(extstr)
-                os.remove(fname)
+                for rmstr in rmfiles:
+                    fname = "train_data/cnn_img_{0:s}_{1:s}.npy".format(rmstr, extstr)
+                    os.remove(fname)
+                    print("  Removed: {0:s}".format(fname))
     return
 
 
@@ -364,7 +367,8 @@ if __name__ == "__main__":
     elif testdata == 1:
         # Create small images of the Lyman series
         zem = 3.0
-        snrs = [0, 20, 50, 100, 200]
+        #snrs = [0, 20, 50, 100, 200]
+        snrs = [20, 50, 100, 200]
         numwav = [4, 8, 16, 32, 64]   # Number of pixels in the wavelength direction
         numlym = 8   # Number of Lyman series lines to use
         numspec = 12
