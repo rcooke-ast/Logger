@@ -42,8 +42,8 @@ def evaluate_model(trainX, trainy, testX, testy):
     verbose, epochs, batch_size = 0, 10, 32
     n_timesteps, n_features, n_outputs = trainX.shape[1], trainX.shape[2], trainy.shape[1]
     model = Sequential()
-    model.add(Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(n_timesteps, n_features)))
-    model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+    model.add(Conv1D(filters=64, kernel_size=5, activation='relu', input_shape=(n_timesteps, n_features)))
+    model.add(Conv1D(filters=64, kernel_size=5, activation='relu'))
     model.add(Dropout(rate=0.5))
     model.add(MaxPooling1D(pool_size=2))
     model.add(Flatten())
