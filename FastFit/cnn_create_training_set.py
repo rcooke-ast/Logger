@@ -7,6 +7,7 @@ from utilities import generate_fakespectra, load_atomic
 from matplotlib import pyplot as plt
 from multiprocessing import Pool, cpu_count
 from multiprocessing.pool import ApplyResult
+from linetools.spectra.xspectrum1d import XSpectrum1D
 atomic = load_atomic()
 
 
@@ -292,9 +293,78 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, snr=30, plotsegs=False
     return fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all
 
 
+def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
+    """
+    zem = qso redshift
+    numspec = number of spectra to generate
+    seed = seed for pseudo random number
+    snr = S/N ratio of the spectrum
+    """
+    # First generate N spectra
+    wavebuffer = 5.0*u.AA  # Number of angstroms beyond QSO Lya emission to include in the saved spectrum
+    numNzb_all = len(snrs)*[0]
+    for dd in range(numspec):
+        seedval = dd
+        if type(seed) is int:
+            seedval = seed
+        elif type(seed) is np.ndarray:
+            seedval = seed[dd]
+        print("Using seed={0:d} for spectrum {1:d}/{2:d}".format(seedval, dd+1, numspec))
+        mock_spec, HI_comps = generate_fakespectra(zem, plot_spec=False, snr=-1, seed=seedval)
+        ww = np.where(mock_spec.wavelength-wavebuffer < atomic[0]*(1.0+zem))
+        npix = ww[0].size
+        zarr = HI_comps['z'].data
+        Narr = HI_comps['lgNHI'].data
+        barr = HI_comps['bval'].value
+        rstate = np.random.RandomState(seed)
+        mock_spec.add_noise(rstate=rstate)
+        for ss, snr in enumerate(snrs):
+            numNzb = max(numNzb_all[ss], zarr.size)  # The maximum number of lines in this spectrum
+            newerr = mock_spec.sig/snr
+            genspec = XSpectrum1D.from_tuple((mock_spec.wavelength, mock_spec.flux, newerr))
+            # Add reproducible noise
+            noisy_spec = genspec.add_noise(rstate=rstate)
+            if dd == 0:
+                # Initialize
+                fdata_all = len(snrs)*[np.zeros((numspec+1, npix))]
+                zdata_all = len(snrs)*[-1*np.ones((numspec, numNzb), dtype=np.float)]   # Labels (redshift)
+                Ndata_all = len(snrs)*[-1*np.ones((numspec, numNzb), dtype=np.float)]   # Labels (column density)
+                bdata_all = len(snrs)*[-1*np.ones((numspec, numNzb), dtype=np.float)]   # Labels (Doppler parameter)
+                # Fill
+                fdata_all[ss][0, :] = noisy_spec.wavelength[ww]
+                fdata_all[ss][1, :] = noisy_spec.flux[ww]
+                numNzb_all[ss] = numNzb
+            else:
+                fdata_all[ss][dd+1, :] = noisy_spec.flux[ww]
+                # Pad arrays as needed
+                zshp = zarr.size
+                if numNzb_all[ss] < zshp:
+                    zdata_all[ss] = np.pad(zdata_all[ss], ((0, 0), (0, zshp-numNzb_all[ss])), 'constant', constant_values=-1)
+                    Ndata_all[ss] = np.pad(Ndata_all[ss], ((0, 0), (0, zshp-numNzb_all[ss])), 'constant', constant_values=-1)
+                    bdata_all[ss] = np.pad(bdata_all[ss], ((0, 0), (0, zshp-numNzb_all[ss])), 'constant', constant_values=-1)
+                    # Update the max array size
+                    numNzb_all[ss] = zshp
+            zdata_all[ss][dd, :] = zarr.copy()
+            Ndata_all[ss][dd, :] = Narr.copy()
+            bdata_all[ss][dd, :] = barr.copy()
+    for ss, snr in enumerate(snrs):
+        # Save the data
+        print("Generated {0:d} spectra of length {1:d} for training".format(numspec, npix))
+        print("This requires {0:f} MB of memory.".format(fdata_all.nbytes / 1.0E6))
+        # Save the data into a single file
+        zstr = "zem{0:.2f}".format(zem)
+        sstr = "snr{0:d}".format(int(snr))
+        extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
+        np.save("train_data/cnn_qsospec_fluxspec_{0:s}".format(extstr), fdata_all[ss])
+        np.save("train_data/cnn_qsospec_zvals_{0:s}".format(extstr), zdata_all[ss])
+        np.save("train_data/cnn_qsospec_Nvals_{0:s}".format(extstr), Ndata_all[ss])
+        np.save("train_data/cnn_qsospec_bvals_{0:s}".format(extstr), bdata_all[ss])
+    return
+
+
 if __name__ == "__main__":
     # Set some starting variables
-    testdata = 1
+    testdata = 2
     multip = True  # Multiprocess?
     starttime = time.time()
 
@@ -387,6 +457,13 @@ if __name__ == "__main__":
                 collect_data(zem, snr, numwav, nruns, rmdata=True)
         else:
             cnn_lyman_images(zem, numwav, numlym, numspec, snrs[0], 0)
+    elif testdata == 2:
+        # Create a series of QSO spectra
+        zem = 3.0
+        numspec = 1000
+        snrs = [0, 20, 50, 100, 200]
+        seed = np.arange(numspec)
+        cnn_qsospec(zem, numspec, seed, snrs=snrs)
     else:
         pass
     tottime = time.time() - starttime
