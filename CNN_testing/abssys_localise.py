@@ -13,9 +13,10 @@ from matplotlib import pyplot as plt
 
 
 def make_gaussians(nmbr, wmin=0.5, wmax=2.5, amin=1.0, amax=2.0, addnoise=True):
+    nspec = 16  # Number of spectral pixels
     widths = np.random.uniform(wmin, wmax, nmbr)
     ampls = np.random.uniform(amin, amax, nmbr)
-    xval = np.linspace(-10.0, 10.0, 16)
+    xval = np.linspace(-10.0, 10.0, nspec)
     models = np.exp(-np.outer(0.5/widths**2, xval**2))
     # Add noise
     noise = 0.0
@@ -58,7 +59,15 @@ def generate_data(data, labels, batch_size):
     counter = 0
     while True:
         X_batch = data[batch_size * counter:batch_size * (counter + 1), :, :]
-        y_batch = labels[batch_size * counter:batch_size * (counter + 1)]
+        y_batch = np.zeros(batch_size, 3)
+        # Roll randomly
+        rroll = np.random.random_integers(0, 15, batch_size)
+        for ii in range(X_batch.shape[0]):
+            if rroll[ii] == 0:
+                y_batch[ii, :2] = labels[batch_size * ii:batch_size * (ii + 1), :]
+                continue
+            X_batch[ii, :, :] = np.roll(X_batch[ii, :, :], axis=0)
+            y_batch[ii, -1] = 1
         counter += 1
         yield X_batch, y_batch
 
@@ -78,7 +87,7 @@ def evaluate_model(trainX, trainy, testX, testy):
     model.add(MaxPooling1D(pool_size=2))
     model.add(Flatten())
     model.add(Dense(100, activation='relu'))
-    model.add(Dense(2, activation='softmax'))
+    model.add(Dense(3, activation='softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     # fit network
     model.fit_generator(
@@ -98,7 +107,7 @@ def summarize_results(scores):
 
 
 # Detect features in a dataset
-def classify_features(repeats=3):
+def localise_features(repeats=3):
     # load data
     trainX, trainy = generate_dataset()
     testX, testy = generate_dataset()
@@ -114,4 +123,4 @@ def classify_features(repeats=3):
 
 
 # run the experiment
-classify_features()
+localise_features()
