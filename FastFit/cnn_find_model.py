@@ -1,23 +1,29 @@
+import keras
 from keras.models import Sequential
-from keras.layers import Dense, Dropout
-from keras.layers import Embedding
-from keras.layers import Conv1D, GlobalAveragePooling1D, MaxPooling1D
-
-seq_length = 64
+from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Conv2D, MaxPooling2D, BatchNormalization
 
 model = Sequential()
-model.add(Conv1D(64, 3, activation='relu', input_shape=(seq_length, 100)))
-model.add(Conv1D(64, 3, activation='relu'))
-model.add(MaxPooling1D(3))
-model.add(Conv1D(128, 3, activation='relu'))
-model.add(Conv1D(128, 3, activation='relu'))
-model.add(GlobalAveragePooling1D())
+model.add(Conv2D(32, kernel_size=(3, 3), activation='relu',
+                 input_shape=(SIZE[0], SIZE[1], 3)))
+model.add(Conv2D(32, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
+
+model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
+
+model.add(Flatten())
+model.add(Dense(128, activation='relu'))
 model.add(Dropout(0.5))
-model.add(Dense(1, activation='sigmoid'))
+model.add(Dense(29, activation='sigmoid'))
 
 model.compile(loss='binary_crossentropy',
-              optimizer='rmsprop',
+              optimizer=keras.optimizers.Adam(),
               metrics=['accuracy'])
 
-model.fit(x_train, y_train, batch_size=16, epochs=10)
-score = model.evaluate(x_test, y_test, batch_size=16)
+n = 10000
+model.fit(np.array(dataset[: n]), np.array(y[: n]), batch_size=16, epochs=5,
+          verbose=1, validation_split=0.1)

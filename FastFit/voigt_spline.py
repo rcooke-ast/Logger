@@ -26,7 +26,7 @@ def voigt_true(u, a):
 
 
 def generate_points():
-    umin, umax, unum = -6.0, 1.0, 5000
+    umin, umax, unum = -6.0, 1.0, 500#0
     amin, amax, anum = 0.0, 0.01, 10
     uarr = 10.0 ** np.linspace(umin, umax, unum)
     uval = np.append(-uarr[::-1], np.append(0.0, uarr))
