@@ -317,7 +317,7 @@ def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
         Narr = HI_comps['lgNHI'].data
         barr = HI_comps['bval'].value
         rstate = np.random.RandomState(seed)
-        mock_spec.add_noise(rstate=rstate)
+        #mock_spec.add_noise(rstate=rstate)
         for ss, snr in enumerate(snrs):
             numNzb = max(numNzb_all[ss], zarr.size)  # The maximum number of lines in this spectrum
             newerr = mock_spec.sig/snr
@@ -364,12 +364,16 @@ def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
 
 if __name__ == "__main__":
     # Set some starting variables
-    testdata = 2
+    # Tasks:
+    # 0 = Create small strips around Lyman-alpha lines
+    # 1 = Create small images of the Lyman series
+    # 2 = Create a series of synthetic quasar spectra with H I Lyman forest lines
+    execute_task = 2
     multip = True  # Multiprocess?
     starttime = time.time()
 
     # Now generate the test data
-    if testdata == 0:
+    if execute_task == 0:
         # Create small strips around Lyman-alpha lines
         zem = 3.0
         snr = 30
@@ -434,7 +438,7 @@ if __name__ == "__main__":
         np.save("train_data/cnn_zvals_{0:s}".format(extstr), zdata_all)
         np.save("train_data/cnn_Nvals_{0:s}".format(extstr), Ndata_all)
         np.save("train_data/cnn_bvals_{0:s}".format(extstr), bdata_all)
-    elif testdata == 1:
+    elif execute_task == 1:
         # Create small images of the Lyman series
         zem = 3.0
         #snrs = [0, 20, 50, 100, 200]
@@ -457,7 +461,7 @@ if __name__ == "__main__":
                 collect_data(zem, snr, numwav, nruns, rmdata=True)
         else:
             cnn_lyman_images(zem, numwav, numlym, numspec, snrs[0], 0)
-    elif testdata == 2:
+    elif execute_task == 2:
         # Create a series of QSO spectra
         zem = 3.0
         numspec = 20

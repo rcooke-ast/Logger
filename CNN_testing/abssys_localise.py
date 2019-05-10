@@ -1,11 +1,5 @@
-import keras
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten
-from keras.layers import Conv2D, MaxPooling2D, BatchNormalization
-
 import pdb
 import numpy as np
-from utilities import load_atomic
 from numpy import mean
 from numpy import std
 from keras.models import Sequential
@@ -17,32 +11,46 @@ from keras.layers.convolutional import MaxPooling1D
 from keras.utils import to_categorical
 from matplotlib import pyplot as plt
 
-nHIwav = 15
-atmdata = load_atomic(return_HIwav=False)
-ww = np.where(atmdata["Ion"] == "1H_I")
-HIwav = atmdata["Wavelength"][ww][3:]
-HIfvl = atmdata["fvalue"][ww][3:]
+
+def make_gaussians(nmbr, wmin=0.5, wmax=2.5, amin=1.0, amax=2.0, addnoise=True):
+    nspec = 16  # Number of spectral pixels
+    widths = np.random.uniform(wmin, wmax, nmbr)
+    ampls = np.random.uniform(amin, amax, nmbr)
+    xval = np.linspace(-10.0, 10.0, nspec)
+    models = np.exp(-np.outer(0.5/widths**2, xval**2))
+    # Add noise
+    noise = 0.0
+    if addnoise:
+        noise = np.random.normal(0.0, amax, models.shape)
+    targets = np.vstack((widths, ampls)).T
+    return models+noise, targets
 
 
-def load_dataset(zem=3.0, snr=0):
-    zstr = "zem{0:.2f}".format(zem)
-    sstr = "snr{0:d}".format(int(snr))
-    extstr = "{0:s}_{1:s}".format(zstr, sstr)
-    fdata_all = np.load("train_data/cnn_fluxspec_{0:s}".format(extstr))
-    wdata_all = np.load("train_data/cnn_wavespec_{0:s}".format(extstr))
-    ldata_all = np.load("train_data/cnn_numbrabs_{0:s}".format(extstr))
-    zdata_all = np.load("train_data/cnn_zvals_{0:s}".format(extstr))
-    Ndata_all = np.load("train_data/cnn_Nvals_{0:s}".format(extstr))
-    # bdata_all = np.load("train_data/cnn_bvals_{0:s}".format(extstr))
+def generate_dataset(nmbr=16384):
+    ratio = 3.0  # This is the ratio of Lya to Lyb
+    # Generate some random Gaussians with different widths
+    trainXa, _ = make_gaussians(nmbr)
+    trainXb, _ = make_gaussians(nmbr)
+    label = np.random.random_integers(0, 1, nmbr)
+    fact = ratio * label
+    label = to_categorical(label)
+    trainX = np.append((trainXa*fact[:, np.newaxis])[:, :, np.newaxis],
+                       trainXb[:, :, np.newaxis], axis=2)
+    return trainX, label
+
+
+def predict(model, scalewidths=-1, wmin=0.5, wmax=2.5):
+    if scalewidths == -1:
+        scalewidths = wmax
     pdb.set_trace()
-    nspec = fdata_all.shape[0]
-    labels = np.zeros(fdata_all.shape, dtype=np.int)
-    for dd in range(nspec):
-        print("Preparing labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
-        for zz in range(zdata_all.shape[1]):
-            for ll in range(nHIwav):
-                HIwav[ll]
-    return trainX, trainy, testX, testy
+    predX, predy, widths = make_gaussians(1024)
+    #predy = np.round(predy)
+    predy = predy
+    preds = ((predy - wmin)/(scalewidths-wmin)) * (wmax-wmin) + wmin
+    vals = model.predict(predX, batch_size=None, verbose=0)
+    predwidths = (preds*vals).sum(1)
+    _, _, _ = plt.hist(widths-predwidths, bins=30)
+    plt.show()
 
 
 def generate_data(data, labels, batch_size):
@@ -84,24 +92,11 @@ def evaluate_model(trainX, trainy, testX, testy):
     # fit network
     model.fit_generator(
         generate_data(trainX, trainy, batch_size),
-        steps_per_epoch=trainX.shape[0] // batch_size,
-        validation_data=generate_data(testX, testy, batch_size*2),
-        validation_steps=testX.shape[0] // batch_size * 2)
-
+        steps_per_epoch=trainX.shape[0] // batch_size)
     # evaluate model
     _, accuracy = model.evaluate(testX, testy, batch_size=batch_size, verbose=0)
     #predict(model, scalewidths=10)
     return accuracy
-
-# Gold standard in cross-validation
-# from sklearn.model_selection import StratifiedKFold
-# seed = 7
-# np.random.seed(seed)
-# kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
-# for train, test in kfold.split(X, Y):
-#     model.fit(X[train], Y[train], epochs=150, batch_size=10, verbose=0)
-#     # evaluate the model
-#     scores = model.evaluate(X[test], Y[test], verbose=0)
 
 
 # summarize scores
@@ -114,7 +109,8 @@ def summarize_results(scores):
 # Detect features in a dataset
 def localise_features(repeats=3):
     # load data
-    trainX, trainy, testX, testy = load_dataset()
+    trainX, trainy = generate_dataset()
+    testX, testy = generate_dataset()
     # repeat experiment
     scores = list()
     for r in range(repeats):
