@@ -344,13 +344,13 @@ def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
                     bdata_all[ss] = np.pad(bdata_all[ss], ((0, 0), (0, zshp-numNzb_all[ss])), 'constant', constant_values=-1)
                     # Update the max array size
                     numNzb_all[ss] = zshp
-            zdata_all[ss][dd, :] = zarr.copy()
-            Ndata_all[ss][dd, :] = Narr.copy()
-            bdata_all[ss][dd, :] = barr.copy()
+            zdata_all[ss][dd, :zarr.size] = zarr.copy()
+            Ndata_all[ss][dd, :zarr.size] = Narr.copy()
+            bdata_all[ss][dd, :zarr.size] = barr.copy()
     for ss, snr in enumerate(snrs):
         # Save the data
         print("Generated {0:d} spectra of length {1:d} for training".format(numspec, npix))
-        print("This requires {0:f} MB of memory.".format(fdata_all.nbytes / 1.0E6))
+        print("This requires {0:f} MB of memory.".format(fdata_all[ss].nbytes / 1.0E6))
         # Save the data into a single file
         zstr = "zem{0:.2f}".format(zem)
         sstr = "snr{0:d}".format(int(snr))
@@ -460,7 +460,7 @@ if __name__ == "__main__":
     elif testdata == 2:
         # Create a series of QSO spectra
         zem = 3.0
-        numspec = 1000
+        numspec = 20
         snrs = [0, 20, 50, 100, 200]
         seed = np.arange(numspec)
         cnn_qsospec(zem, numspec, seed, snrs=snrs)
