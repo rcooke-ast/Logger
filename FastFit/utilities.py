@@ -26,6 +26,8 @@ def load_atomic(return_HIwav=True):
     atmdata = dict({})
     atmdata['Ion'] = np.array(isotope+b"_"+table.array['Ion']).astype(np.str)
     atmdata['Wavelength'] = np.array(table.array['RestWave'])
+    atmdata['fvalue'] = np.array(table.array['fval'])
+    atmdata['gamma'] = np.array(table.array['Gamma'])
     if return_HIwav:
         ww = np.where(atmdata["Ion"] == "1H_I")
         wavs = atmdata["Wavelength"][ww][3:]
