@@ -302,7 +302,7 @@ def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
     """
     # First generate N spectra
     wavebuffer = 5.0*u.AA  # Number of angstroms beyond QSO Lya emission to include in the saved spectrum
-    numNzb_all = len(snrs)*[0]
+    numNzb_all = [0 for all in snrs]
     for dd in range(numspec):
         seedval = dd
         if type(seed) is int:
@@ -320,22 +320,26 @@ def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
         #mock_spec.add_noise(rstate=rstate)
         for ss, snr in enumerate(snrs):
             numNzb = max(numNzb_all[ss], zarr.size)  # The maximum number of lines in this spectrum
-            newerr = mock_spec.sig/snr
-            genspec = XSpectrum1D.from_tuple((mock_spec.wavelength, mock_spec.flux, newerr))
-            # Add reproducible noise
-            noisy_spec = genspec.add_noise(rstate=rstate)
+            if snr == 0:
+                noisy_spec = XSpectrum1D.from_tuple((mock_spec.wavelength.copy(), mock_spec.flux.copy()))
+            else:
+                newerr = mock_spec.sig/snr
+                genspec = XSpectrum1D.from_tuple((mock_spec.wavelength.copy(), mock_spec.flux.copy(), newerr.copy()))
+                # Add reproducible noise
+                noisy_spec = genspec.add_noise(rstate=rstate)
             if dd == 0:
                 # Initialize
-                fdata_all = len(snrs)*[np.zeros((numspec+1, npix))]
-                zdata_all = len(snrs)*[-1*np.ones((numspec, numNzb), dtype=np.float)]   # Labels (redshift)
-                Ndata_all = len(snrs)*[-1*np.ones((numspec, numNzb), dtype=np.float)]   # Labels (column density)
-                bdata_all = len(snrs)*[-1*np.ones((numspec, numNzb), dtype=np.float)]   # Labels (Doppler parameter)
+                if ss == 0:
+                    fdata_all = [np.zeros((numspec+1, npix)) for all in snrs]
+                    zdata_all = [-1*np.ones((numspec, numNzb), dtype=np.float) for all in snrs]   # Labels (redshift)
+                    Ndata_all = [-1*np.ones((numspec, numNzb), dtype=np.float) for all in snrs]   # Labels (column density)
+                    bdata_all = [-1*np.ones((numspec, numNzb), dtype=np.float) for all in snrs]   # Labels (Doppler parameter)
                 # Fill
-                fdata_all[ss][0, :] = noisy_spec.wavelength[ww]
-                fdata_all[ss][1, :] = noisy_spec.flux[ww]
+                fdata_all[ss][0, :] = noisy_spec.wavelength.copy()[ww]
+                fdata_all[ss][1, :] = noisy_spec.flux.copy()[ww]
                 numNzb_all[ss] = numNzb
             else:
-                fdata_all[ss][dd+1, :] = noisy_spec.flux[ww]
+                fdata_all[ss][dd+1, :] = noisy_spec.flux.copy()[ww]
                 # Pad arrays as needed
                 zshp = zarr.size
                 if numNzb_all[ss] < zshp:
@@ -464,7 +468,7 @@ if __name__ == "__main__":
     elif execute_task == 2:
         # Create a series of QSO spectra
         zem = 3.0
-        numspec = 20
+        numspec = 5000
         snrs = [0, 20, 50, 100, 200]
         seed = np.arange(numspec)
         cnn_qsospec(zem, numspec, seed, snrs=snrs)
