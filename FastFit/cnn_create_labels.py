@@ -7,7 +7,7 @@ from multiprocessing.pool import ApplyResult
 from scipy import interpolate
 from utilities import load_atomic, convolve
 from pyigm.continuum import quasar as pycq
-from scipy.special import wofz
+from scipy.special import wofz, erf
 import pdb
 
 nHIwav = 15
@@ -63,11 +63,12 @@ def generate_continuum(seed, wave, zqso=3.0):
     return cspl(wave)
 
 
-def generate_label(ispec, fdata_all, wdata, zqso=3.0):
+def generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=2.0):
     wlim = (1.0+np.max(zdata_all[ispec, :]))*HIwav[-1]
-    cont = generate_continuum(ispec, wdata)
-    optdep = -np.log(fdata_all[ispec, :]/cont)
-    labels = np.zeros(fdata_all.shape, dtype=np.int)
+    labels = np.zeros(wdata.shape[0], dtype=np.int)
+    maxodv = np.zeros(wdata.shape[0], dtype=np.int)
+    fact = 2.0 * np.sqrt(2.0 * np.log(2.0))
+    fc = erf(fact/2.0)  # Fraction of the profile containing the FWHM (i.e. the probability of being within the FWHM)
     for dd in range(nspec):
         print("Preparing labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
         for zz in range(zdata_all.shape[1]):
@@ -79,31 +80,56 @@ def generate_label(ispec, fdata_all, wdata, zqso=3.0):
                 continue
             par = [Ndata_all[ispec, zz], zdata_all[ispec, zz], bdata_all[ispec, zz]]
             wvpass = HIwav * (1.0 + zdata_all[ispec, zz])
-            odtmp = voigt_tau(par, wvpass[wvpass > wlim], logn=True)
-            # Given S/N of spectrum
+            HIwlm = HIwav[wvpass > wlim]
+            HIflm = HIfvl[wvpass > wlim]
+            wvpass = wvpass[wvpass > wlim]
+            odtmp = voigt_tau(par, wvpass, logn=True)
+            for vv in range(wvpass.size):
+                amin = np.argmin(np.abs(wdata-wvpass[vv]))
+                if odtmp[vv] > maxodv[amin]:
+                    # Given S/N of spectrum, estimate significance
+                    EW = 10.0**Ndata_all[ispec, zz] * HIflm[vv] * HIwlm[vv]**2 / 1.13E20
+                    nsig = snr_thresh  # Record all line positions for perfect data
+                    if snr > 0:
+                        # Estimate the significance of every feature
+                        bFWHM = (fact/np.sqrt(2.0)) * bdata_all[ispec, zz]
+                        dellam = wvpass[vv] * bFWHM / 299792.458  # Must be in Angstroms
+                        nsig = fc * EW * snr / dellam
+                    if nsig >= snr_thresh:
+                        maxodv[amin] = odtmp[vv]
+                        labels[amin] = vv+1
     return labels
 
 
 # Load the data
-fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, 0)
-for ispec in range(10):
-    cont = generate_continuum(ispec, wdata)
-    plt.plot(wdata, fdata_all[ispec, :], 'k-')
-    plt.plot(wdata, cont, 'r-')
-    plt.show()
-    plt.clf()
-pdb.set_trace()
-
+plotcont = False
+plotlabl = True
+snr = 0
+fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr)
 nspec = fdata_all.shape[0]
+labels = np.zeros((nspec, wdata.shape[0]))
+for ispec in range(nspec):
+    labels[ispec, :] = generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
 
-pool = Pool(processes=cpu_count())
-async_results = []
-for jj in range(nruns):
-    seed = np.arange(numspec) + jj * numspec
-    async_results.append(pool.apply_async(cnn_numabs, (zem, numseg, numspec, seed, snr)))
-pool.close()
-pool.join()
-map(ApplyResult.wait, async_results)
-# Collect the returned data
-for jj in range(nruns):
-    getVal = async_results[jj].get()
+# Plot the labels to ensure this has been done correctly
+specplot = 0
+ymin, ymax = 0.0, np.max(fdata_all[specplot, :])
+plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps')
+# Plot Lya
+ww = np.where(labels[ispec, :] == 1)
+plt.vlines(HIwav[0]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'r', '-')
+# Plot Lyb
+ww = np.where(labels[ispec, :] == 2)
+plt.vlines(HIwav[1]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'g', '--')
+# Plot Lyg
+ww = np.where(labels[ispec, :] == 3)
+plt.vlines(HIwav[2]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'b', ':')
+plt.show()
+
+if plotcont:
+    for ispec in range(10):
+        cont = generate_continuum(ispec, wdata)
+        plt.plot(wdata, fdata_all[ispec, :], 'k-')
+        plt.plot(wdata, cont, 'r-')
+        plt.show()
+        plt.clf()
