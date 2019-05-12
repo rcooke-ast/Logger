@@ -46,13 +46,14 @@ def load_dataset(zem=3.0, snr=0, numspec=20):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
-    wfdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}.npy".format(extstr))
+    fname = "train_data/cnn_qsospec_fluxspec_{0:s}.npy".format(extstr)
+    wfdata_all = np.load(fname)
     wdata = wfdata_all[0, :]
     fdata_all = wfdata_all[1:, :]
     zdata_all = np.load("train_data/cnn_qsospec_zvals_{0:s}.npy".format(extstr))
     Ndata_all = np.load("train_data/cnn_qsospec_Nvals_{0:s}.npy".format(extstr))
     bdata_all = np.load("train_data/cnn_qsospec_bvals_{0:s}.npy".format(extstr))
-    return fdata_all, wdata, zdata_all, Ndata_all, bdata_all
+    return fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all
 
 
 def generate_continuum(seed, wave, zqso=3.0):
@@ -105,26 +106,35 @@ def generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=
 plotcont = False
 plotlabl = True
 snr = 0
-fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr)
+fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr)
 nspec = fdata_all.shape[0]
 labels = np.zeros((nspec, wdata.shape[0]))
 for ispec in range(nspec):
     labels[ispec, :] = generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
 
 # Plot the labels to ensure this has been done correctly
-specplot = 0
-ymin, ymax = 0.0, np.max(fdata_all[specplot, :])
-plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps')
-# Plot Lya
-ww = np.where(labels[ispec, :] == 1)
-plt.vlines(HIwav[0]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'r', '-')
-# Plot Lyb
-ww = np.where(labels[ispec, :] == 2)
-plt.vlines(HIwav[1]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'g', '--')
-# Plot Lyg
-ww = np.where(labels[ispec, :] == 3)
-plt.vlines(HIwav[2]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'b', ':')
-plt.show()
+if plotlabl:
+    specplot = 0
+    ymin, ymax = 0.0, np.max(fdata_all[specplot, :])
+    plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps')
+    # Plot Lya
+    ww = np.where(labels[ispec, :] == 1)
+    plt.vlines(HIwav[0]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'r', '-')
+    # Plot Lyb
+    ww = np.where(labels[ispec, :] == 2)
+    plt.vlines(HIwav[1]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'g', '--')
+    # Plot Lyg
+    ww = np.where(labels[ispec, :] == 3)
+    plt.vlines(HIwav[2]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'b', ':')
+    plt.show()
+
+print("WARNING :: By continuing, you will save/overwrite the previously stored label data...")
+pdb.set_trace()
+# Save the labels and the data
+print("Saving the labels")
+print(labels.shape, fdata_all.shape)
+np.save(fname.replace(".npy", "_fluxonly.npy"), fdata_all)
+np.save(fname.replace(".npy", "_labelonly.npy"), labels)
 
 if plotcont:
     for ispec in range(10):
