@@ -24,24 +24,17 @@ HIwav = atmdata["Wavelength"][ww][3:]
 HIfvl = atmdata["fvalue"][ww][3:]
 
 
-def load_dataset(zem=3.0, snr=0):
+def load_dataset(zem=3.0, snr=0, ftrain=0.75):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}".format(zstr, sstr)
-    fdata_all = np.load("train_data/cnn_fluxspec_{0:s}".format(extstr))
-    wdata_all = np.load("train_data/cnn_wavespec_{0:s}".format(extstr))
-    ldata_all = np.load("train_data/cnn_numbrabs_{0:s}".format(extstr))
-    zdata_all = np.load("train_data/cnn_zvals_{0:s}".format(extstr))
-    Ndata_all = np.load("train_data/cnn_Nvals_{0:s}".format(extstr))
-    # bdata_all = np.load("train_data/cnn_bvals_{0:s}".format(extstr))
-    pdb.set_trace()
-    nspec = fdata_all.shape[0]
-    labels = np.zeros(fdata_all.shape, dtype=np.int)
-    for dd in range(nspec):
-        print("Preparing labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
-        for zz in range(zdata_all.shape[1]):
-            for ll in range(nHIwav):
-                HIwav[ll]
+    fdata_all = np.load("train_data/cnn_fluxspec_{0:s}_fluxonly.npy".format(extstr))
+    label_all = np.load("train_data/cnn_wavespec_{0:s}_labelonly.npy".format(extstr))
+    ntrain = int(ftrain*fdata_all.shape[0])
+    trainX = fdata_all[:ntrain, :]
+    trainy = label_all[:ntrain, :]
+    testX = fdata_all[ntrain:, :]
+    testy = label_all[ntrain:, :]
     return trainX, trainy, testX, testy
 
 
