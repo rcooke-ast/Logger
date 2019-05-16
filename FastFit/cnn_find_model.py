@@ -24,12 +24,12 @@ HIwav = atmdata["Wavelength"][ww][3:]
 HIfvl = atmdata["fvalue"][ww][3:]
 
 
-def load_dataset(zem=3.0, snr=0, ftrain=0.75):
+def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
-    extstr = "{0:s}_{1:s}".format(zstr, sstr)
-    fdata_all = np.load("train_data/cnn_fluxspec_{0:s}_fluxonly.npy".format(extstr))
-    label_all = np.load("train_data/cnn_wavespec_{0:s}_labelonly.npy".format(extstr))
+    extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
+    fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_fluxonly.npy".format(extstr))
+    label_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_labelonly.npy".format(extstr))
     ntrain = int(ftrain*fdata_all.shape[0])
     trainX = fdata_all[:ntrain, :]
     trainy = label_all[:ntrain, :]
@@ -44,7 +44,7 @@ def generate_data(data, labels, batch_size):
     counter = 0
     while True:
         X_batch = data[batch_size * counter:batch_size * (counter + 1), :, :]
-        y_batch = np.zeros(batch_size, 3)
+        y_batch = np.zeros(batch_size, 1+nHIwav)
         # Roll randomly
         rroll = np.random.random_integers(0, 15, batch_size)
         for ii in range(X_batch.shape[0]):

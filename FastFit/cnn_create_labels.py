@@ -70,43 +70,46 @@ def generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=
     maxodv = np.zeros(wdata.shape[0], dtype=np.int)
     fact = 2.0 * np.sqrt(2.0 * np.log(2.0))
     fc = erf(fact/2.0)  # Fraction of the profile containing the FWHM (i.e. the probability of being within the FWHM)
-    for dd in range(nspec):
-        print("Preparing labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
-        for zz in range(zdata_all.shape[1]):
-            if zdata_all[ispec, zz] == -1:
-                # No more lines
-                break
-            if (1.0+zdata_all[ispec, zz])*HIwav[0] < wlim:
-                # Lya line is lower than the highest Lyman series line of the highest redshift absorber
-                continue
-            par = [Ndata_all[ispec, zz], zdata_all[ispec, zz], bdata_all[ispec, zz]]
-            wvpass = HIwav * (1.0 + zdata_all[ispec, zz])
-            HIwlm = HIwav[wvpass > wlim]
-            HIflm = HIfvl[wvpass > wlim]
-            wvpass = wvpass[wvpass > wlim]
-            odtmp = voigt_tau(par, wvpass, logn=True)
-            for vv in range(wvpass.size):
-                amin = np.argmin(np.abs(wdata-wvpass[vv]))
-                if odtmp[vv] > maxodv[amin]:
-                    # Given S/N of spectrum, estimate significance
-                    EW = 10.0**Ndata_all[ispec, zz] * HIflm[vv] * HIwlm[vv]**2 / 1.13E20
-                    nsig = snr_thresh  # Record all line positions for perfect data
-                    if snr > 0:
-                        # Estimate the significance of every feature
-                        bFWHM = (fact/np.sqrt(2.0)) * bdata_all[ispec, zz]
-                        dellam = wvpass[vv] * bFWHM / 299792.458  # Must be in Angstroms
-                        nsig = fc * EW * snr / dellam
-                    if nsig >= snr_thresh:
-                        maxodv[amin] = odtmp[vv]
-                        labels[amin] = vv+1
+    dd = ispec
+#    for dd in range(nspec):
+    print("Preparing labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
+    for zz in range(zdata_all.shape[1]):
+        if zdata_all[ispec, zz] == -1:
+            # No more lines
+            break
+        if (1.0+zdata_all[ispec, zz])*HIwav[0] < wlim:
+            # Lya line is lower than the highest Lyman series line of the highest redshift absorber
+            continue
+        par = [Ndata_all[ispec, zz], zdata_all[ispec, zz], bdata_all[ispec, zz]]
+        wvpass = HIwav * (1.0 + zdata_all[ispec, zz])
+        HIwlm = HIwav[wvpass > wlim]
+        HIflm = HIfvl[wvpass > wlim]
+        wvpass = wvpass[wvpass > wlim]
+        odtmp = voigt_tau(par, wvpass, logn=True)
+        for vv in range(wvpass.size):
+            amin = np.argmin(np.abs(wdata-wvpass[vv]))
+            if odtmp[vv] > maxodv[amin]:
+                # Given S/N of spectrum, estimate significance
+                EW = 10.0**Ndata_all[ispec, zz] * HIflm[vv] * HIwlm[vv]**2 / 1.13E20
+                nsig = snr_thresh  # Record all line positions for perfect data
+                if snr > 0:
+                    # Estimate the significance of every feature
+                    bFWHM = (fact/np.sqrt(2.0)) * bdata_all[ispec, zz]
+                    dellam = wvpass[vv] * bFWHM / 299792.458  # Must be in Angstroms
+                    nsig = fc * EW * snr / dellam
+                if nsig >= snr_thresh:
+                    maxodv[amin] = odtmp[vv]
+                    labels[amin] = vv+1
     return labels
 
 
 # Load the data
 plotcont = False
-plotlabl = True
+plotlabl = False
 snr = 0
+print("Loading dataset...")
 fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr)
+print("Complete")
 nspec = fdata_all.shape[0]
 labels = np.zeros((nspec, wdata.shape[0]))
 for ispec in range(nspec):
@@ -114,24 +117,28 @@ for ispec in range(nspec):
 
 # Plot the labels to ensure this has been done correctly
 if plotlabl:
-    specplot = 0
+    specplot = 1
+    cont = generate_continuum(specplot, wdata)
     ymin, ymax = 0.0, np.max(fdata_all[specplot, :])
     plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps')
     # Plot Lya
-    ww = np.where(labels[ispec, :] == 1)
-    plt.vlines(HIwav[0]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'r', '-')
+    ww = np.where(labels[specplot, :] == 1)
+    plt.vlines(HIwav[0]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'r', '-')
+    plt.plot(wdata[ww], cont[ww], 'ro', drawstyle='steps')
     # Plot Lyb
-    ww = np.where(labels[ispec, :] == 2)
-    plt.vlines(HIwav[1]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'g', '--')
+    ww = np.where(labels[specplot, :] == 2)
+    plt.vlines(HIwav[1]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'g', '--')
+    plt.plot(wdata[ww], cont[ww], 'go', drawstyle='steps')
     # Plot Lyg
-    ww = np.where(labels[ispec, :] == 3)
-    plt.vlines(HIwav[2]*(1.0*zdata_all[ispec, ww[0]].flatten()), ymin, ymax, 'b', ':')
+    ww = np.where(labels[specplot, :] == 3)
+    plt.vlines(HIwav[2]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'b', ':')
+    plt.plot(wdata[ww], cont[ww], 'bo', drawstyle='steps')
     plt.show()
 
 print("WARNING :: By continuing, you will save/overwrite the previously stored label data...")
 pdb.set_trace()
 # Save the labels and the data
-print("Saving the labels")
+print("Saving the labels: Check the following sizes are the same")
 print(labels.shape, fdata_all.shape)
 np.save(fname.replace(".npy", "_fluxonly.npy"), fdata_all)
 np.save(fname.replace(".npy", "_labelonly.npy"), labels)
