@@ -1,23 +1,23 @@
-import keras
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten
-from keras.layers import Conv2D, MaxPooling2D, BatchNormalization
 
 import pdb
 import numpy as np
 from utilities import load_atomic
 from numpy import mean
 from numpy import std
-from keras.models import Sequential
+from keras.utils import plot_model
+from keras.models import Model
+from keras.layers import Input
 from keras.layers import Dense
 from keras.layers import Flatten
-from keras.layers import Dropout
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
-from keras.utils import to_categorical
-from matplotlib import pyplot as plt
+from keras.layers.merge import concatenate
+from keras.layers import Dropout#, BatchNormalization
 
-nHIwav = 15
+vpix = 2.5   # Size of each pixel in km/s
+scalefact = np.log(1.0 + vpix/299792.458)
+spec_len = 64  # Number of pixels to use in each segment
+nHIwav = 15    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:]
@@ -41,49 +41,63 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20):
 def generate_data(data, labels, batch_size):
     samples_per_epoch = data.shape[0]
     number_of_batches = samples_per_epoch // batch_size
-    counter = 0
+    cntr_spec = 0
     while True:
-        X_batch = data[batch_size * counter:batch_size * (counter + 1), :, :]
-        y_batch = np.zeros(batch_size, 1+nHIwav)
-        # Roll randomly
-        rroll = np.random.random_integers(0, 15, batch_size)
-        for ii in range(X_batch.shape[0]):
-            if rroll[ii] == 0:
-                y_batch[ii, :2] = labels[batch_size * ii:batch_size * (ii + 1), :]
-                continue
-            X_batch[ii, :, :] = np.roll(X_batch[ii, :, :], axis=0)
-            y_batch[ii, -1] = 1
-        counter += 1
-        yield X_batch, y_batch
+        #[samples, speclen, lylinesspectra]
+        #[batch_size, spec_len, nHIwav]
+        #X_batch = data[batch_size * cntr_batch:batch_size * (cntr_batch + 1), :, :]
+        indict = ({})
+        for ll in range(nHIwav):
+            X_batch = -1 * np.ones(data.shape[0], spec_len, nHIwav)
+            indict['Ly{0:d}'.format(ll+1)] = X_batch.copy()
+            for nn in range(nHIwav):
+                nshft = int(np.round(np.log(HIwav[nn]/HIwav[ll])/scalefact))
+                X_batch
 
-        # restart counter to yeild data in the next epoch as well
-        if counter >= number_of_batches:
-            counter = 0
+        y_batch = np.zeros(batch_size, 1+nHIwav)
+        cntr_batch += 1
+        yield (indict, {'main_output': y_batch})
+
+        # restart counter to yield data in the next epoch as well
+        if cntr_batch >= number_of_batches:
+            cntr_batch = 0
 
 
 # fit and evaluate a model
 def evaluate_model(trainX, trainy, testX, testy):
     verbose, epochs, batch_size = 1, 10, 32
-    n_timesteps, n_features = trainX.shape[1], trainX.shape[2]
-    model = Sequential()
-    model.add(Conv1D(filters=16, kernel_size=3, activation='relu', input_shape=(n_timesteps, n_features)))
-    model.add(Conv1D(filters=16, kernel_size=5, activation='relu'))
-    model.add(Dropout(rate=0.5))
-    model.add(MaxPooling1D(pool_size=2))
-    model.add(Flatten())
-    model.add(Dense(100, activation='relu'))
-    model.add(Dense(3, activation='softmax'))
+    inputs = []
+    concat_arr = []
+    for ll in range(nHIwav):
+        inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
+        conv11 = Conv1D(filters=16, kernel_size=3, activation='relu')(inputs[-1])
+        pool11 = MaxPooling1D(pool_size=2)(conv11)
+        conv12 = Conv1D(filters=16, kernel_size=5, activation='relu')(pool11)
+        drop11 = Dropout(rate=0.5)(conv12)
+        pool12 = MaxPooling1D(pool_size=2)(drop11)
+        concat_arr.append(Flatten()(pool12))
+    # merge input models
+    merge = concatenate(concat_arr)
+    # interpretation model
+    hidden1 = Dense(100, activation='relu')(merge)
+    #hidden2 = Dense(100, activation='relu')(hidden1)
+    output = Dense(1+nHIwav, activation='softmax', name='main_output')(hidden1)
+    model = Model(inputs=inputs, outputs=output)
+    # Summarize layers
+    print(model.summary())
+    # Plot graph
+    plot_model(model, to_file='cnn_find_model.png')
+    # Compile
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    # fit network
+    # Fit network
     model.fit_generator(
         generate_data(trainX, trainy, batch_size),
         steps_per_epoch=trainX.shape[0] // batch_size,
         validation_data=generate_data(testX, testy, batch_size*2),
         validation_steps=testX.shape[0] // batch_size * 2)
 
-    # evaluate model
+    # Eevaluate model
     _, accuracy = model.evaluate(testX, testy, batch_size=batch_size, verbose=0)
-    #predict(model, scalewidths=10)
     return accuracy
 
 # Gold standard in cross-validation
@@ -108,6 +122,7 @@ def summarize_results(scores):
 def localise_features(repeats=3):
     # load data
     trainX, trainy, testX, testy = load_dataset()
+    pdb.set_trace()
     # repeat experiment
     scores = list()
     for r in range(repeats):
