@@ -29,7 +29,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20):
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
     fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_fluxonly.npy".format(extstr))
-    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_IDlabelonly.npy".format(extstr))
+    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_IDlabelonly.npy".format(extstr)).astype(np.int)
     Nlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_Nlabelonly.npy".format(extstr))
     blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_blabelonly.npy".format(extstr))
     ntrain = int(ftrain*fdata_all.shape[0])
@@ -46,6 +46,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20):
 
 def generate_data(data, IDlabels, Nlabels, blabels):
     cntr_spec = 0
+    IDarr = np.arange(IDlabels.shape[0], dtype=np.int)
     while True:
         indict = ({})
         for ll in range(nHIwav):
@@ -59,10 +60,11 @@ def generate_data(data, IDlabels, Nlabels, blabels):
                     continue
                 X_batch[:, :, nn] = data[:, lmin:lmax]
             indict['Ly{0:d}'.format(ll + 1)] = X_batch.copy()
-        ID_batch = IDlabels[:, cntr_spec+(spec_len-1)//2]
+        ID_batch = np.zeros((IDlabels.shape[0], 1 + nHIwav))
+        ID_batch[(IDarr, IDlabels[:, cntr_spec+(spec_len-1)//2],)] = 1
         N_batch = Nlabels[:, cntr_spec+(spec_len-1)//2]
         b_batch = blabels[:, cntr_spec+(spec_len-1)//2]
-        outdict = ({'ID_output': ID_batch, 'N_output': N_batch, 'b_output': b_batch})
+        outdict = {'ID_output': ID_batch, 'N_output': N_batch, 'b_output': b_batch}
         cntr_spec += 1
         yield (indict, outdict)
 
@@ -101,7 +103,7 @@ def evaluate_model(trainX, trainy, trainN, trainb,
     # Compile
     loss = {'ID_output': 'categorical_crossentropy',
             'N_output': 'mse',
-            'b_output': 'mse'},
+            'b_output': 'mse'}
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
     # Fit network
     model.fit_generator(
@@ -136,7 +138,6 @@ def summarize_results(scores):
 def localise_features(repeats=3):
     # load data
     trainX, trainy, trainN, trainb, testX, testy, testN, testb = load_dataset()
-    pdb.set_trace()
     # repeat experiment
     scores = list()
     for r in range(repeats):
