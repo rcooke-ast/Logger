@@ -1,5 +1,5 @@
 # This script reads the spectra generated with
-# cnn_create_training_set and generates some labels
+# cnn_create_training_set and generates some ID_labels
 import numpy as np
 from matplotlib import pyplot as plt
 from multiprocessing import Pool, cpu_count
@@ -64,15 +64,17 @@ def generate_continuum(seed, wave, zqso=3.0):
     return cspl(wave)
 
 
-def generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=2.0):
+def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=2.0):
     wlim = (1.0+np.max(zdata_all[ispec, :]))*HIwav[-1]
-    labels = np.zeros(wdata.shape[0], dtype=np.int)
+    ID_labels = np.zeros(wdata.shape[0], dtype=np.int)
+    N_labels = np.zeros(wdata.shape[0], dtype=np.int)
+    b_labels = np.zeros(wdata.shape[0], dtype=np.int)
     maxodv = np.zeros(wdata.shape[0], dtype=np.int)
     fact = 2.0 * np.sqrt(2.0 * np.log(2.0))
     fc = erf(fact/2.0)  # Fraction of the profile containing the FWHM (i.e. the probability of being within the FWHM)
     dd = ispec
 #    for dd in range(nspec):
-    print("Preparing labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
+    print("Preparing ID_labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
     for zz in range(zdata_all.shape[1]):
         if zdata_all[ispec, zz] == -1:
             # No more lines
@@ -99,8 +101,10 @@ def generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=
                     nsig = fc * EW * snr / dellam
                 if nsig >= snr_thresh:
                     maxodv[amin] = odtmp[vv]
-                    labels[amin] = vv+1
-    return labels
+                    ID_labels[amin] = vv+1
+                    N_labels[amin] = Ndata_all[ispec, zz]
+                    b_labels[amin] = bdata_all[ispec, zz]
+    return ID_labels, N_labels, b_labels
 
 
 # Load the data
@@ -111,37 +115,43 @@ print("Loading dataset...")
 fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr)
 print("Complete")
 nspec = fdata_all.shape[0]
-labels = np.zeros((nspec, wdata.shape[0]))
+ID_labels = np.zeros((nspec, wdata.shape[0]))
+N_labels = np.zeros((nspec, wdata.shape[0]))
+b_labels = np.zeros((nspec, wdata.shape[0]))
 for ispec in range(nspec):
-    labels[ispec, :] = generate_label(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
+    ID_labels[ispec, :], \
+    N_labels[ispec, :], \
+    b_labels[ispec, :] = generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
 
-# Plot the labels to ensure this has been done correctly
+# Plot the ID_labels to ensure this has been done correctly
 if plotlabl:
     specplot = 1
     cont = generate_continuum(specplot, wdata)
     ymin, ymax = 0.0, np.max(fdata_all[specplot, :])
     plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps')
     # Plot Lya
-    ww = np.where(labels[specplot, :] == 1)
+    ww = np.where(ID_labels[specplot, :] == 1)
     plt.vlines(HIwav[0]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'r', '-')
     plt.plot(wdata[ww], cont[ww], 'ro', drawstyle='steps')
     # Plot Lyb
-    ww = np.where(labels[specplot, :] == 2)
+    ww = np.where(ID_labels[specplot, :] == 2)
     plt.vlines(HIwav[1]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'g', '--')
     plt.plot(wdata[ww], cont[ww], 'go', drawstyle='steps')
     # Plot Lyg
-    ww = np.where(labels[specplot, :] == 3)
+    ww = np.where(ID_labels[specplot, :] == 3)
     plt.vlines(HIwav[2]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'b', ':')
     plt.plot(wdata[ww], cont[ww], 'bo', drawstyle='steps')
     plt.show()
 
 print("WARNING :: By continuing, you will save/overwrite the previously stored label data...")
 pdb.set_trace()
-# Save the labels and the data
-print("Saving the labels: Check the following sizes are the same")
-print(labels.shape, fdata_all.shape)
+# Save the ID_labels and the data
+print("Saving the ID_labels: Check the following sizes are the same")
+print(ID_labels.shape, fdata_all.shape)
 np.save(fname.replace(".npy", "_fluxonly.npy"), fdata_all)
-np.save(fname.replace(".npy", "_labelonly.npy"), labels)
+np.save(fname.replace(".npy", "_IDlabelonly.npy"), ID_labels)
+np.save(fname.replace(".npy", "_Nlabelonly.npy"), N_labels)
+np.save(fname.replace(".npy", "_blabelonly.npy"), b_labels)
 
 if plotcont:
     for ispec in range(10):
