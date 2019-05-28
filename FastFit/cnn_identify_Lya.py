@@ -174,7 +174,7 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     # Compile
     loss = {'ID_output': 'categorical_crossentropy',
             'N_output': mse_mask(),
-            'z_output': mse_mask(),
+            'z_output': 'mse',
             'b_output': mse_mask()}
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
     # Fit network

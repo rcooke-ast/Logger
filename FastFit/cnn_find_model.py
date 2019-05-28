@@ -27,20 +27,11 @@ HIfvl = atmdata["fvalue"][ww][3:]
 
 
 # Define custom loss
-def mse_mask(y_tmask, y_vmask):
+def mse_mask():
     # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
     def loss(y_true, y_pred):
-        if y_tmask._shape_as_list()[0] == y_true._keras_shape[0]:
-            return K.mean((K.clip(y_tmask, 0, 1)/K.clip(y_tmask, K.epsilon(), 1)) * K.square(y_pred - y_true), axis=-1)
-        elif y_vmask._shape_as_list()[0] == y_true._keras_shape[0]:
-            return K.mean((K.clip(y_vmask, 0, 1) / K.clip(y_vmask, K.epsilon(), 1)) * K.square(y_pred - y_true), axis=-1)
-        elif y_true._keras_shape[0] is None:
-            return K.mean(K.square(y_pred - y_true), axis=-1)
-        else:
-            pdb.set_trace()
-            import sys
-            sys.exit()
-
+        mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+        return K.mean(mask * K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
 
@@ -143,12 +134,10 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     # Plot graph
     plot_model(model, to_file='cnn_find_model.png')
     # Compile
-    yc_tmask = tf.convert_to_tensor(trainy, np.float32)
-    yc_vmask = tf.convert_to_tensor(testy, np.float32)
     loss = {'ID_output': 'categorical_crossentropy',
-            'N_output': mse_mask(yc_tmask, yc_vmask),
-            'z_output': mse_mask(yc_tmask, yc_vmask),
-            'b_output': mse_mask(yc_tmask, yc_vmask)}
+            'N_output': mse_mask(),
+            'z_output': mse_mask(),
+            'b_output': mse_mask()}
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
     # Fit network
     model.fit_generator(

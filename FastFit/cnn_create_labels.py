@@ -161,6 +161,7 @@ N_labels = np.zeros((nspec, wdata.shape[0], 2))
 b_labels = np.zeros((nspec, wdata.shape[0], 2))
 z_labels = np.zeros((nspec, wdata.shape[0], 2))
 for ispec in range(nspec):
+    if ispec > 2: continue
     ID_labels[ispec, :, :], \
     N_labels[ispec, :, :], \
     b_labels[ispec, :, :], \
@@ -199,8 +200,10 @@ np.save(fname.replace(".npy", "_zlabelonly.npy"), z_labels)
 
 if False:
     plt.plot(fdata_all[0, :] * 30)
-    plt.plot(z_labels[0, :, 0])
+    plt.plot(b_labels[0, :, 0])
     plt.show()
+    #plt.plot(z_labels[0, :, 0])
+    #plt.plot(N_labels[0, :, 0])
 
 if plotcont:
     for ispec in range(10):
