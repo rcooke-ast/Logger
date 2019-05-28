@@ -10,7 +10,7 @@ from pyigm.continuum import quasar as pycq
 from scipy.special import wofz, erf
 import pdb
 
-nHIwav = 15
+nHIwav = 4
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:3+nHIwav]
@@ -28,9 +28,9 @@ def voigt_tau(par, wavein, logn=True):
         cold = par[0]
     # Redshift
     zp1 = par[1] + 1.0
-    tau = np.zeros(wavein.size)
+    tau = np.zeros((wavein.size, HIwav.size))
     for ii in range(HIwav.size):
-        wv = HIwav[ii]
+        wv = HIwav[ii] * 1.0e-8  # Convert to cm
         # Doppler parameter
         bl = par[2] * wv / 2.99792458E5
         a = HIgam[ii] * wv * wv / (3.76730313461770655E11 * bl)
@@ -38,11 +38,11 @@ def voigt_tau(par, wavein, logn=True):
         cne = cold * cns
         ww = (wavein * 1.0e-8) / zp1
         v = wv * ww * ((1.0 / ww) - (1.0 / wv)) / bl
-        tau += cne * wofz(v + 1j * a).real
+        tau[:, ii] = cne * wofz(v + 1j * a).real
     return tau
 
 
-def load_dataset(zem=3.0, snr=0, numspec=20):
+def load_dataset(zem=3.0, snr=0, numspec=20, normalise=False):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
@@ -53,6 +53,9 @@ def load_dataset(zem=3.0, snr=0, numspec=20):
     zdata_all = np.load("train_data/cnn_qsospec_zvals_{0:s}.npy".format(extstr))
     Ndata_all = np.load("train_data/cnn_qsospec_Nvals_{0:s}.npy".format(extstr))
     bdata_all = np.load("train_data/cnn_qsospec_bvals_{0:s}.npy".format(extstr))
+    if normalise:
+        for ispec in range(fdata_all.shape[0]):
+            fdata_all[ispec, :] /= generate_continuum(ispec, wdata)
     return fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all
 
 
@@ -64,12 +67,23 @@ def generate_continuum(seed, wave, zqso=3.0):
     return cspl(wave)
 
 
-def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=2.0):
+def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=1.0, Nstore=2):
+    """
+    Nstore : maximum number of absorption profiles that contribute to a given pixel
+    """
+    if snr == 0:
+        # For perfec data, assume S/N is very high
+        snr = 200.0
+    # Calculate the bluest Lyman series line wavelength of the highest redshift absorber
     wlim = (1.0+np.max(zdata_all[ispec, :]))*HIwav[-1]
-    ID_labels = np.zeros(wdata.shape[0], dtype=np.int)
-    N_labels = np.zeros(wdata.shape[0], dtype=np.int)
-    b_labels = np.zeros(wdata.shape[0], dtype=np.int)
-    maxodv = np.zeros(wdata.shape[0], dtype=np.int)
+    # Prepare some label arrays
+    ID_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.int)
+    N_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
+    b_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
+    z_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
+    maxodv = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
+    widarr = np.arange(wdata.shape[0])
+    # Set some constants
     fact = 2.0 * np.sqrt(2.0 * np.log(2.0))
     fc = erf(fact/2.0)  # Fraction of the profile containing the FWHM (i.e. the probability of being within the FWHM)
     dd = ispec
@@ -83,28 +97,55 @@ def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr
             # Lya line is lower than the highest Lyman series line of the highest redshift absorber
             continue
         par = [Ndata_all[ispec, zz], zdata_all[ispec, zz], bdata_all[ispec, zz]]
-        wvpass = HIwav * (1.0 + zdata_all[ispec, zz])
-        HIwlm = HIwav[wvpass > wlim]
-        HIflm = HIfvl[wvpass > wlim]
-        wvpass = wvpass[wvpass > wlim]
-        odtmp = voigt_tau(par, wvpass, logn=True)
-        for vv in range(wvpass.size):
-            amin = np.argmin(np.abs(wdata-wvpass[vv]))
-            if odtmp[vv] > maxodv[amin]:
+        odtmp = voigt_tau(par, wdata, logn=True)
+        for vv in range(HIwav.size):
+            pixdiff = widarr - np.argmax(odtmp[:, vv])
+            tst = np.where((odtmp[:, vv] > maxodv[:, 0]) &
+                           (odtmp[:, vv] > snr_thresh / snr) &
+                           (np.abs(pixdiff) < 1000))[0]
+            if tst.size == 0:
+                # Does not contribute maximum optical depth - try next
+                tst = np.where((odtmp[:, vv] > maxodv[:, 1]) &
+                               (odtmp[:, vv] > snr_thresh / snr) &
+                               (np.abs(pixdiff) < 1000))[0]
+                if tst.size == 0:
+                    # This line doesn't contribute significantly to the optical depth
+                    continue
+                else:
+                    # Update the labels at the corresponding locations
+                    maxodv[tst, 1] = odtmp[tst, vv]
+                    ID_labels[tst, 1] = vv+1
+                    N_labels[tst, 1] = Ndata_all[ispec, zz]
+                    b_labels[tst, 1] = bdata_all[ispec, zz]
+                    z_labels[tst, 1] = pixdiff[tst]
+            else:
+                # Shift down the maximum optical depth and labels
+                maxodv[tst, 1] = maxodv[tst, 0].copy()
+                ID_labels[tst, 1] = ID_labels[tst, 0].copy()
+                N_labels[tst, 1] = N_labels[tst, 0].copy()
+                b_labels[tst, 1] = b_labels[tst, 0].copy()
+                z_labels[tst, 1] = z_labels[tst, 0].copy()
+                # Update the values for the maximum optical depth
+                maxodv[tst, 0] = odtmp[tst, vv]
+                ID_labels[tst, 0] = vv + 1
+                N_labels[tst, 0] = Ndata_all[ispec, zz]
+                b_labels[tst, 0] = bdata_all[ispec, zz]
+                z_labels[tst, 0] = pixdiff[tst]
+
                 # Given S/N of spectrum, estimate significance
-                EW = 10.0**Ndata_all[ispec, zz] * HIflm[vv] * HIwlm[vv]**2 / 1.13E20
-                nsig = snr_thresh  # Record all line positions for perfect data
-                if snr > 0:
-                    # Estimate the significance of every feature
-                    bFWHM = (fact/np.sqrt(2.0)) * bdata_all[ispec, zz]
-                    dellam = wvpass[vv] * bFWHM / 299792.458  # Must be in Angstroms
-                    nsig = fc * EW * snr / dellam
-                if nsig >= snr_thresh:
-                    maxodv[amin] = odtmp[vv]
-                    ID_labels[amin] = vv+1
-                    N_labels[amin] = Ndata_all[ispec, zz]
-                    b_labels[amin] = bdata_all[ispec, zz]
-    return ID_labels, N_labels, b_labels
+                # EW = 10.0**Ndata_all[ispec, zz] * HIflm[vv] * HIwlm[vv]**2 / 1.13E20
+                # nsig = snr_thresh  # Record all line positions for perfect data
+                # if snr > 0:
+                #     # Estimate the significance of every feature
+                #     bFWHM = (fact/np.sqrt(2.0)) * bdata_all[ispec, zz]
+                #     dellam = wvpass[vv] * bFWHM / 299792.458  # Must be in Angstroms
+                #     nsig = fc * EW * snr / dellam
+                # if nsig >= snr_thresh:
+                #     maxodv[amin] = odtmp[vv]
+                #     ID_labels[amin] = vv+1
+                #     N_labels[amin] = Ndata_all[ispec, zz]
+                #     b_labels[amin] = bdata_all[ispec, zz]
+    return ID_labels, N_labels, b_labels, z_labels
 
 
 # Load the data
@@ -112,16 +153,18 @@ plotcont = False
 plotlabl = False
 snr = 0
 print("Loading dataset...")
-fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr)
+fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(3.0, snr, normalise=True)
 print("Complete")
 nspec = fdata_all.shape[0]
-ID_labels = np.zeros((nspec, wdata.shape[0]))
-N_labels = np.zeros((nspec, wdata.shape[0]))
-b_labels = np.zeros((nspec, wdata.shape[0]))
+ID_labels = np.zeros((nspec, wdata.shape[0], 2))
+N_labels = np.zeros((nspec, wdata.shape[0], 2))
+b_labels = np.zeros((nspec, wdata.shape[0], 2))
+z_labels = np.zeros((nspec, wdata.shape[0], 2))
 for ispec in range(nspec):
-    ID_labels[ispec, :], \
-    N_labels[ispec, :], \
-    b_labels[ispec, :] = generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
+    ID_labels[ispec, :, :], \
+    N_labels[ispec, :, :], \
+    b_labels[ispec, :, :], \
+    z_labels[ispec, :, :] = generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
 
 # Plot the ID_labels to ensure this has been done correctly
 if plotlabl:
@@ -152,6 +195,12 @@ np.save(fname.replace(".npy", "_fluxonly.npy"), fdata_all)
 np.save(fname.replace(".npy", "_IDlabelonly.npy"), ID_labels)
 np.save(fname.replace(".npy", "_Nlabelonly.npy"), N_labels)
 np.save(fname.replace(".npy", "_blabelonly.npy"), b_labels)
+np.save(fname.replace(".npy", "_zlabelonly.npy"), z_labels)
+
+if False:
+    plt.plot(fdata_all[0, :] * 30)
+    plt.plot(z_labels[0, :, 0])
+    plt.show()
 
 if plotcont:
     for ispec in range(10):
