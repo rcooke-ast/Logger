@@ -10,7 +10,7 @@ from pyigm.continuum import quasar as pycq
 from scipy.special import wofz, erf
 import pdb
 
-nHIwav = 4
+nHIwav = 1
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:3+nHIwav]
@@ -75,7 +75,7 @@ def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr
         # For perfec data, assume S/N is very high
         snr = 200.0
     # Calculate the bluest Lyman series line wavelength of the highest redshift absorber
-    wlim = (1.0+np.max(zdata_all[ispec, :]))*HIwav[-1]
+    wlim = (1.0+np.max(zdata_all[ispec, :]))*atmdata["Wavelength"][ww][3+nHIwav]
     # Prepare some label arrays
     ID_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.int)
     N_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
@@ -107,7 +107,7 @@ def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr
                 # Does not contribute maximum optical depth - try next
                 tst = np.where((odtmp[:, vv] > maxodv[:, 1]) &
                                (odtmp[:, vv] > snr_thresh / snr) &
-                               (np.abs(pixdiff) < 1000))[0]
+                               (np.abs(pixdiff) < 100))[0]
                 if tst.size == 0:
                     # This line doesn't contribute significantly to the optical depth
                     continue

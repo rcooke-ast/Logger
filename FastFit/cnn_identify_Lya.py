@@ -15,11 +15,12 @@ from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
 from keras.layers.merge import concatenate
 from keras.layers import Dropout, BatchNormalization
+from matplotlib import pyplot as plt
 
 vpix = 2.5   # Size of each pixel in km/s
 scalefact = np.log(1.0 + vpix/299792.458)
 spec_len = 257  # Number of pixels to use in each segment (must be odd)
-nHIwav = 4    # Number of lyman series lines to consider
+nHIwav = 1    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:]
@@ -27,22 +28,43 @@ HIfvl = atmdata["fvalue"][ww][3:]
 
 
 # Define custom loss
-def mse_mask(y_tmask, y_vmask):
+def mse_mask():
     # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
     def loss(y_true, y_pred):
-        if y_tmask._shape_as_list()[0] == y_true._keras_shape[0]:
-            return K.mean((K.clip(y_tmask, 0, 1)/K.clip(y_tmask, K.epsilon(), 1)) * K.square(y_pred - y_true), axis=-1)
-        elif y_vmask._shape_as_list()[0] == y_true._keras_shape[0]:
-            return K.mean((K.clip(y_vmask, 0, 1) / K.clip(y_vmask, K.epsilon(), 1)) * K.square(y_pred - y_true), axis=-1)
-        elif y_true._keras_shape[0] is None:
-            return K.mean(K.square(y_pred - y_true), axis=-1)
-        else:
-            pdb.set_trace()
-            import sys
-            sys.exit()
-
+        mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+        return K.mean(mask * K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
+
+
+def gen_plotdata(data, ii):
+    X_batch = -1 * np.ones((data.shape[0], spec_len, nHIwav))
+    for nn in range(nHIwav):
+        nshft = int(np.round(np.log(HIwav[nn] / HIwav[0]) / scalefact))
+        lmin = ii + nshft
+        lmax = lmin + spec_len
+        if lmin < 0 or lmax >= data.shape[1]:
+            # Gone off the edge of the spectrum
+            continue
+        X_batch[:, :, nn] = data[:, lmin:lmax]
+    return X_batch
+
+
+def plot_spec(model, predX, predy, predN, predz, predb):
+    pdb.set_trace()
+    ymin, ymax = np.min(predX[0, :]), np.max(predX[0, :])
+    plt.plot(predX[0, :], 'k-', drawstyle='steps')
+    plocs = np.array([])
+    tlocs = np.where(predy[0, :] == 1)
+    for ii in range(49000, 50000):
+        y_pred = model.predict(gen_plotdata(predX, ii))
+        if y_pred[0][1] > 0.5:
+            plocs = np.append(plocs, ii+(spec_len-1)//2)
+    plt.vlines(tlocs, ymin, ymax, 'r', '-')
+    plt.vlines(plocs, ymin, ymax, 'b', '--')
+    plt.show()
+    pdb.set_trace()
+    return
 
 
 def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
@@ -55,26 +77,32 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
     blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_blabelonly.npy".format(extstr))
     zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_zlabelonly.npy".format(extstr))
     ntrain = int(ftrain*fdata_all.shape[0])
+    npred = 2
     speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
     trainX = fdata_all[:ntrain, -speccut:]
     trainy = IDlabel_all[:ntrain, -speccut:, 0]
     trainN = Nlabel_all[:ntrain, -speccut:, 0]
     trainz = zlabel_all[:ntrain, -speccut:, 0]
     trainb = blabel_all[:ntrain, -speccut:, 0]
-    if True:
-        pdb.set_trace()
-        from matplotlib import pyplot as plt
+    testX = fdata_all[ntrain:-npred, -speccut:]
+    testy = IDlabel_all[ntrain:-npred, -speccut:, 0]
+    testN = Nlabel_all[ntrain:-npred, -speccut:, 0]
+    testz = zlabel_all[ntrain:-npred, -speccut:, 0]
+    testb = blabel_all[ntrain:-npred, -speccut:, 0]
+    predX = fdata_all[-npred:, -speccut:]
+    predy = IDlabel_all[-npred:, -speccut:, 0]
+    predN = Nlabel_all[-npred:, -speccut:, 0]
+    predz = zlabel_all[-npred:, -speccut:, 0]
+    predb = blabel_all[-npred:, -speccut:, 0]
+    if False:
         plt.plot(trainX[0, :], 'k-', drawstyle='steps')
-        tlocs = np.where(trainz[0, :] == 1)-1
+        tlocs = np.where(trainz[0, :] == 1)[0]-1
         plt.vlines(tlocs, 0, 1, 'r', '-')
         plt.show()
-    testX = fdata_all[ntrain:, -speccut:]
-    testy = IDlabel_all[ntrain:, -speccut:, 0]
-    testN = Nlabel_all[ntrain:, -speccut:, 0]
-    testz = zlabel_all[ntrain:, -speccut:, 0]
-    testb = blabel_all[ntrain:, -speccut:, 0]
     print(trainX.shape[1], trainX.shape[1]//epochs, trainX.shape[1]%epochs)
-    return trainX, trainy, trainN, trainz, trainb, testX, testy, testN, testz, testb
+    return trainX, trainy, trainN, trainz, trainb,\
+           testX, testy, testN, testz, testb,\
+           predX, predy, predN, predz, predb
 
 
 def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
@@ -113,23 +141,24 @@ def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
 # fit and evaluate a model
 def evaluate_model(trainX, trainy, trainN, trainz, trainb,
                    testX, testy, testN, testz, testb,
+                   predX, predy, predN, predz, predb,
                    epochs=10, verbose=1):
     inputs = []
     concat_arr = []
     for ll in range(nHIwav):
         inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
-        conv11 = Conv1D(filters=128, kernel_size=4, activation='relu')(inputs[-1])
+        conv11 = Conv1D(filters=128, kernel_size=16, activation='relu')(inputs[-1])
         pool11 = MaxPooling1D(pool_size=5)(conv11)
-        norm11 = BatchNormalization()(pool11)
-        conv12 = Conv1D(filters=128, kernel_size=8, activation='relu')(norm11)
+        #norm11 = BatchNormalization()(pool11)
+        conv12 = Conv1D(filters=128, kernel_size=32, activation='relu')(pool11)
         pool12 = MaxPooling1D(pool_size=5)(conv12)
-        norm12 = BatchNormalization()(pool12)
+        #norm12 = BatchNormalization()(pool12)
 #        conv13 = Conv1D(filters=128, kernel_size=16, activation='relu')(norm12)
 #        pool13 = MaxPooling1D(pool_size=2)(conv13)
 #        norm13 = BatchNormalization()(pool13)
-        concat_arr.append(Flatten()(norm12))
+#        concat_arr.append(Flatten()(norm12))
     # merge input models
-    merge = concatenate(concat_arr)
+    merge = Flatten()(pool12)
     # interpretation model
     #hidden2 = Dense(100, activation='relu')(hidden1)
     fullcon = Dense(300, activation='relu')(merge)
@@ -143,12 +172,10 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     # Plot graph
     plot_model(model, to_file='cnn_find_model.png')
     # Compile
-    yc_tmask = tf.convert_to_tensor(trainy, np.float32)
-    yc_vmask = tf.convert_to_tensor(testy, np.float32)
     loss = {'ID_output': 'categorical_crossentropy',
-            'N_output': mse_mask(yc_tmask, yc_vmask),
-            'z_output': mse_mask(yc_tmask, yc_vmask),
-            'b_output': mse_mask(yc_tmask, yc_vmask)}
+            'N_output': mse_mask(),
+            'z_output': mse_mask(),
+            'b_output': mse_mask()}
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
     # Fit network
     model.fit_generator(
@@ -164,6 +191,9 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
                                         steps=(testX.shape[1] - spec_len)//epochs,
                                         verbose=0)
     pdb.set_trace()
+    # Plot an example spectrum
+    plot_spec(model, predX, predy, predN, predz, predb)
+
     return accuracy, model.metrics_names
 
 # Gold standard in cross-validation
@@ -189,12 +219,14 @@ def summarize_results(scores):
 def localise_features(repeats=3, epochs=10):
     # load data
     trainX, trainy, trainN, trainz, trainb,\
-    testX, testy, testN, testz, testb = load_dataset(epochs=epochs)
+    testX, testy, testN, testz, testb,\
+    predX, predy, predN, predz, predb = load_dataset(epochs=epochs)
     # repeat experiment
     allscores = dict({})
     for r in range(repeats):
         scores, names = evaluate_model(trainX, trainy, trainN, trainz, trainb,
-                                       testX, testy, testN, testz, testb, epochs=epochs)
+                                       testX, testy, testN, testz, testb,
+                                       predX, predy, predN, predz, predb, epochs=epochs)
         if r == 0:
             for name in names:
                 allscores[name] = []
@@ -209,4 +241,4 @@ def localise_features(repeats=3, epochs=10):
 
 
 # run the experiment
-localise_features(epochs=50)
+localise_features(epochs=10)
