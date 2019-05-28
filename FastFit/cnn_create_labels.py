@@ -102,7 +102,7 @@ def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr
             pixdiff = widarr - np.argmax(odtmp[:, vv])
             tst = np.where((odtmp[:, vv] > maxodv[:, 0]) &
                            (odtmp[:, vv] > snr_thresh / snr) &
-                           (np.abs(pixdiff) < 1000))[0]
+                           (np.abs(pixdiff) < 100))[0]
             if tst.size == 0:
                 # Does not contribute maximum optical depth - try next
                 tst = np.where((odtmp[:, vv] > maxodv[:, 1]) &

@@ -4,6 +4,8 @@ import numpy as np
 from utilities import load_atomic
 from numpy import mean
 from numpy import std
+import tensorflow as tf
+import keras.backend as K
 from keras.utils import plot_model
 from keras.models import Model
 from keras.layers import Input
@@ -16,12 +18,31 @@ from keras.layers import Dropout, BatchNormalization
 
 vpix = 2.5   # Size of each pixel in km/s
 scalefact = np.log(1.0 + vpix/299792.458)
-spec_len = 129  # Number of pixels to use in each segment (must be odd)
+spec_len = 257  # Number of pixels to use in each segment (must be odd)
 nHIwav = 4    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:]
 HIfvl = atmdata["fvalue"][ww][3:]
+
+
+# Define custom loss
+def mse_mask(y_tmask, y_vmask):
+    # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
+    def loss(y_true, y_pred):
+        if y_tmask._shape_as_list()[0] == y_true._keras_shape[0]:
+            return K.mean((K.clip(y_tmask, 0, 1)/K.clip(y_tmask, K.epsilon(), 1)) * K.square(y_pred - y_true), axis=-1)
+        elif y_vmask._shape_as_list()[0] == y_true._keras_shape[0]:
+            return K.mean((K.clip(y_vmask, 0, 1) / K.clip(y_vmask, K.epsilon(), 1)) * K.square(y_pred - y_true), axis=-1)
+        elif y_true._keras_shape[0] is None:
+            return K.mean(K.square(y_pred - y_true), axis=-1)
+        else:
+            pdb.set_trace()
+            import sys
+            sys.exit()
+
+    # Return a function
+    return loss
 
 
 def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
@@ -35,12 +56,12 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
     zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_zlabelonly.npy".format(extstr))
     ntrain = int(ftrain*fdata_all.shape[0])
     speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
-    trainX = fdata_all[:ntrain, -speccut:, 0]
+    trainX = fdata_all[:ntrain, -speccut:]
     trainy = IDlabel_all[:ntrain, -speccut:, 0]
     trainN = Nlabel_all[:ntrain, -speccut:, 0]
     trainz = zlabel_all[:ntrain, -speccut:, 0]
     trainb = blabel_all[:ntrain, -speccut:, 0]
-    testX = fdata_all[ntrain:, -speccut:, 0]
+    testX = fdata_all[ntrain:, -speccut:]
     testy = IDlabel_all[ntrain:, -speccut:, 0]
     testN = Nlabel_all[ntrain:, -speccut:, 0]
     testz = zlabel_all[ntrain:, -speccut:, 0]
@@ -90,19 +111,21 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     concat_arr = []
     for ll in range(nHIwav):
         inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
-        conv11 = Conv1D(filters=100, kernel_size=32, activation='relu')(inputs[-1])
-        pool11 = MaxPooling1D(pool_size=6)(conv11)
+        conv11 = Conv1D(filters=128, kernel_size=4, activation='relu')(inputs[-1])
+        pool11 = MaxPooling1D(pool_size=5)(conv11)
         norm11 = BatchNormalization()(pool11)
-        conv12 = Conv1D(filters=100, kernel_size=16, activation='relu')(norm11)
-#        drop11 = Dropout(rate=0.5)(conv12)
-        pool12 = MaxPooling1D(pool_size=6)(conv12)
+        conv12 = Conv1D(filters=128, kernel_size=8, activation='relu')(norm11)
+        pool12 = MaxPooling1D(pool_size=5)(conv12)
         norm12 = BatchNormalization()(pool12)
+#        conv13 = Conv1D(filters=128, kernel_size=16, activation='relu')(norm12)
+#        pool13 = MaxPooling1D(pool_size=2)(conv13)
+#        norm13 = BatchNormalization()(pool13)
         concat_arr.append(Flatten()(norm12))
     # merge input models
     merge = concatenate(concat_arr)
     # interpretation model
     #hidden2 = Dense(100, activation='relu')(hidden1)
-    fullcon = Dense(100, activation='relu')(merge)
+    fullcon = Dense(300, activation='relu')(merge)
     ID_output = Dense(1+nHIwav, activation='softmax', name='ID_output')(fullcon)
     N_output = Dense(1, activation='linear', name='N_output')(fullcon)
     z_output = Dense(1, activation='linear', name='z_output')(fullcon)
@@ -113,10 +136,12 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     # Plot graph
     plot_model(model, to_file='cnn_find_model.png')
     # Compile
+    yc_tmask = tf.convert_to_tensor(trainy, np.float32)
+    yc_vmask = tf.convert_to_tensor(testy, np.float32)
     loss = {'ID_output': 'categorical_crossentropy',
-            'N_output': 'mse',
-            'z_output': 'mse',
-            'b_output': 'mse'}
+            'N_output': mse_mask(yc_tmask, yc_vmask),
+            'z_output': mse_mask(yc_tmask, yc_vmask),
+            'b_output': mse_mask(yc_tmask, yc_vmask)}
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
     # Fit network
     model.fit_generator(
@@ -131,7 +156,8 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     accuracy = model.evaluate_generator(generate_data(testX, testy, testN, testz, testb),
                                         steps=(testX.shape[1] - spec_len)//epochs,
                                         verbose=0)
-    return accuracy[4:], model.metrics_names[4:]
+    pdb.set_trace()
+    return accuracy, model.metrics_names
 
 # Gold standard in cross-validation
 # from sklearn.model_selection import StratifiedKFold
@@ -166,11 +192,14 @@ def localise_features(repeats=3, epochs=10):
             for name in names:
                 allscores[name] = []
         for ii, name in enumerate(names):
-            allscores[name].append(scores[ii] * 100.0)
-            print('%s >#%d: %.3f' % (name, r + 1, allscores[name][-1]))
+            if '_acc' in name:
+                allscores[name].append(scores[ii] * 100.0)
+                print('%s >#%d: %.3f' % (name, r + 1, allscores[name][-1]))
+            else:
+                print('%s >#%d: %.3f' % (name, r + 1, scores[ii]))
     # summarize results
     summarize_results(allscores)
 
 
 # run the experiment
-localise_features(epochs=10)
+localise_features(epochs=50)
