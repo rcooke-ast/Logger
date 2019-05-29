@@ -10,7 +10,7 @@ from pyigm.continuum import quasar as pycq
 from scipy.special import wofz, erf
 import pdb
 
-nHIwav = 1
+nHIwav = 4
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:3+nHIwav]
@@ -67,7 +67,7 @@ def generate_continuum(seed, wave, zqso=3.0):
     return cspl(wave)
 
 
-def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=1.0, Nstore=2):
+def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=1.0, Nstore=2):
     """
     Nstore : maximum number of absorption profiles that contribute to a given pixel
     """
@@ -82,55 +82,80 @@ def generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr
     b_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
     z_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
     maxodv = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
+    maxcld = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
     widarr = np.arange(wdata.shape[0])
     # Set some constants
     fact = 2.0 * np.sqrt(2.0 * np.log(2.0))
     fc = erf(fact/2.0)  # Fraction of the profile containing the FWHM (i.e. the probability of being within the FWHM)
     dd = ispec
-#    for dd in range(nspec):
+    # Sort by decreasing column density
+    srted = np.argsort(Ndata_all[ispec, :])[::-1]
+    N_sort = Ndata_all[ispec, :][srted]
+    z_sort = zdata_all[ispec, :][srted]
+    b_sort = bdata_all[ispec, :][srted]
     print("Preparing ID_labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
-    for zz in range(zdata_all.shape[1]):
-        if zdata_all[ispec, zz] == -1:
+    for zz in range(z_sort.size):
+        if z_sort[zz] == -1:
             # No more lines
             break
-        if (1.0+zdata_all[ispec, zz])*HIwav[0] < wlim:
+        if (1.0+z_sort[zz])*HIwav[0] < wlim:
             # Lya line is lower than the highest Lyman series line of the highest redshift absorber
             continue
-        par = [Ndata_all[ispec, zz], zdata_all[ispec, zz], bdata_all[ispec, zz]]
+        par = [N_sort[zz], z_sort[zz], b_sort[zz]]
         odtmp = voigt_tau(par, wdata, logn=True)
         for vv in range(HIwav.size):
-            pixdiff = widarr - np.argmax(odtmp[:, vv])
+            amx = np.argmax(odtmp[:, vv])
+            pixdiff = widarr - amx
+
+            # First deal with saturated pixels
+            limsat = 10.0/snr
+            if np.exp(-odtmp[amx, vv]) <= limsat:
+                tst = np.where((np.exp(-odtmp[:, vv]) <= limsat) &
+                               (odtmp[:, vv] > maxodv[:, 0]) &
+                               (maxodv[:, 0] < -np.log(limsat)))[0]
+                if tst.size == 0:
+                    # This pixel is saturated, but a nearby absorption feature is stronger
+                    pass
+                else:
+                    # Update the values for the maximum optical depth
+                    maxodv[tst, 0] = odtmp[tst, vv]
+                    ID_labels[tst, 0] = vv + 1
+                    N_labels[tst, 0] = N_sort[zz]
+                    b_labels[tst, 0] = b_sort[zz]
+                    z_labels[tst, 0] = pixdiff[tst]
+            # Now deal with unsaturated pixels
             tst = np.where((odtmp[:, vv] > maxodv[:, 0]) &
                            (odtmp[:, vv] > snr_thresh / snr) &
-                           (np.abs(pixdiff) < 100))[0]
-            if tst.size == 0:
-                # Does not contribute maximum optical depth - try next
-                tst = np.where((odtmp[:, vv] > maxodv[:, 1]) &
-                               (odtmp[:, vv] > snr_thresh / snr) &
-                               (np.abs(pixdiff) < 100))[0]
+                           (np.abs(pixdiff) < 1000))[0]
+            if fdata[amx] > limsat:
                 if tst.size == 0:
-                    # This line doesn't contribute significantly to the optical depth
-                    continue
+                    # Does not contribute maximum optical depth - try next
+                    tst = np.where((odtmp[:, vv] > maxodv[:, 1]) &
+                                   (odtmp[:, vv] > snr_thresh / snr) &
+                                   (np.abs(pixdiff) < 1000))[0]
+                    if tst.size == 0:
+                        # This line doesn't contribute significantly to the optical depth
+                        continue
+                    else:
+                        # Update the labels at the corresponding locations
+                        maxodv[tst, 1] = odtmp[tst, vv]
+                        ID_labels[tst, 1] = vv+1
+                        N_labels[tst, 1] = N_sort[zz]
+                        b_labels[tst, 1] = b_sort[zz]
+                        z_labels[tst, 1] = pixdiff[tst]
                 else:
-                    # Update the labels at the corresponding locations
-                    maxodv[tst, 1] = odtmp[tst, vv]
-                    ID_labels[tst, 1] = vv+1
-                    N_labels[tst, 1] = Ndata_all[ispec, zz]
-                    b_labels[tst, 1] = bdata_all[ispec, zz]
-                    z_labels[tst, 1] = pixdiff[tst]
-            else:
-                # Shift down the maximum optical depth and labels
-                maxodv[tst, 1] = maxodv[tst, 0].copy()
-                ID_labels[tst, 1] = ID_labels[tst, 0].copy()
-                N_labels[tst, 1] = N_labels[tst, 0].copy()
-                b_labels[tst, 1] = b_labels[tst, 0].copy()
-                z_labels[tst, 1] = z_labels[tst, 0].copy()
-                # Update the values for the maximum optical depth
-                maxodv[tst, 0] = odtmp[tst, vv]
-                ID_labels[tst, 0] = vv + 1
-                N_labels[tst, 0] = Ndata_all[ispec, zz]
-                b_labels[tst, 0] = bdata_all[ispec, zz]
-                z_labels[tst, 0] = pixdiff[tst]
+                    # Shift down the maximum optical depth and labels
+                    maxodv[tst, 1] = maxodv[tst, 0].copy()
+                    ID_labels[tst, 1] = ID_labels[tst, 0].copy()
+                    N_labels[tst, 1] = N_labels[tst, 0].copy()
+                    b_labels[tst, 1] = b_labels[tst, 0].copy()
+                    z_labels[tst, 1] = z_labels[tst, 0].copy()
+                    # Update the values for the maximum optical depth
+                    maxodv[tst, 0] = odtmp[tst, vv]
+                    ID_labels[tst, 0] = vv + 1
+                    N_labels[tst, 0] = N_sort[zz]
+                    b_labels[tst, 0] = b_sort[zz]
+                    z_labels[tst, 0] = pixdiff[tst]
 
                 # Given S/N of spectrum, estimate significance
                 # EW = 10.0**Ndata_all[ispec, zz] * HIflm[vv] * HIwlm[vv]**2 / 1.13E20
@@ -161,11 +186,11 @@ N_labels = np.zeros((nspec, wdata.shape[0], 2))
 b_labels = np.zeros((nspec, wdata.shape[0], 2))
 z_labels = np.zeros((nspec, wdata.shape[0], 2))
 for ispec in range(nspec):
-    if ispec > 2: continue
+    if ispec > 1: continue
     ID_labels[ispec, :, :], \
     N_labels[ispec, :, :], \
     b_labels[ispec, :, :], \
-    z_labels[ispec, :, :] = generate_labels(ispec, wdata, zdata_all, Ndata_all, bdata_all, snr=snr)
+    z_labels[ispec, :, :] = generate_labels(ispec, wdata, fdata_all[ispec, :], zdata_all, Ndata_all, bdata_all, snr=snr)
 
 # Plot the ID_labels to ensure this has been done correctly
 if plotlabl:
@@ -198,12 +223,16 @@ np.save(fname.replace(".npy", "_Nlabelonly.npy"), N_labels)
 np.save(fname.replace(".npy", "_blabelonly.npy"), b_labels)
 np.save(fname.replace(".npy", "_zlabelonly.npy"), z_labels)
 
-if False:
+if True:
     plt.plot(fdata_all[0, :] * 30)
-    plt.plot(b_labels[0, :, 0])
+    plt.plot(z_labels[0, :, 0])
     plt.show()
     #plt.plot(z_labels[0, :, 0])
     #plt.plot(N_labels[0, :, 0])
+    plt.plot(fdata_all[0, :], 'k-', drawstyle='steps')
+    tlocs = np.where(z_labels[0, :, 0] == 1)[0] - 1
+    plt.vlines(tlocs, 0, 1, 'r', '-')
+    plt.show()
 
 if plotcont:
     for ispec in range(10):
