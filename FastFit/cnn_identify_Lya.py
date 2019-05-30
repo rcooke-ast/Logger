@@ -158,7 +158,7 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
         norm13 = BatchNormalization()(conv13)
 #        concat_arr.append(Flatten()(norm12))
     # merge input models
-    merge = Flatten()(inputs[-1])
+    merge = Flatten()(norm13)
     # interpretation model
     #hidden2 = Dense(100, activation='relu')(hidden1)
     fullcon = Dense(100000, activation='relu')(merge)
