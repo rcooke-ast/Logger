@@ -94,7 +94,10 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
     z_sort = zdata_all[ispec, :][srted]
     b_sort = bdata_all[ispec, :][srted]
     wlc = np.where(N_sort > 17.0)
-    zmax = np.max(z_sort[wlc])
+    if wlc[0].size == 0:
+        zmax = 0.0
+    else:
+        zmax = np.max(z_sort[wlc])
     print("Preparing ID_labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
     for zz in range(z_sort.size):
         if z_sort[zz] == -1:
@@ -194,7 +197,7 @@ N_labels = np.zeros((nspec, wdata.shape[0], 2))
 b_labels = np.zeros((nspec, wdata.shape[0], 2))
 z_labels = np.zeros((nspec, wdata.shape[0], 2))
 for ispec in range(nspec):
-    if ispec > 1: continue
+    # if ispec > 1: continue
     ID_labels[ispec, :, :], \
     N_labels[ispec, :, :], \
     b_labels[ispec, :, :], \
@@ -232,13 +235,14 @@ np.save(fname.replace(".npy", "_blabelonly_{0:d}.npy".format(nspec)), b_labels)
 np.save(fname.replace(".npy", "_zlabelonly_{0:d}.npy".format(nspec)), z_labels)
 
 if True:
-    plt.plot(fdata_all[0, :] * 30)
-    plt.plot(z_labels[0, :, 0])
+    ispec=5
+    plt.plot(fdata_all[ispec, :] * 30)
+    plt.plot(z_labels[ispec, :, 0])
     plt.show()
     #plt.plot(z_labels[0, :, 0])
     #plt.plot(N_labels[0, :, 0])
-    plt.plot(fdata_all[0, :], 'k-', drawstyle='steps')
-    tlocs = np.where(z_labels[0, :, 0] == 1)[0] - 1
+    plt.plot(fdata_all[ispec, :], 'k-', drawstyle='steps')
+    tlocs = np.where(z_labels[ispec, :, 0] == 1)[0] - 1
     plt.vlines(tlocs, 0, 1, 'r', '-')
     plt.show()
 
