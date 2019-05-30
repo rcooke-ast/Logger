@@ -93,6 +93,8 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
     N_sort = Ndata_all[ispec, :][srted]
     z_sort = zdata_all[ispec, :][srted]
     b_sort = bdata_all[ispec, :][srted]
+    wlc = np.where(N_sort > 17.0)
+    zmax = np.max(z_sort[wlc])
     print("Preparing ID_labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
     for zz in range(z_sort.size):
         if z_sort[zz] == -1:
@@ -101,9 +103,15 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
         if (1.0+z_sort[zz])*HIwav[0] < wlim:
             # Lya line is lower than the highest Lyman series line of the highest redshift absorber
             continue
+#        if (1.0+z_sort[zz])*HIwav[-1] < (1.0+zmax)*912.0:
+            # HIwav[-1] line of this system is lower wavelength than the Lyman limit of the highest redshift LLS
+#            continue
         par = [N_sort[zz], z_sort[zz], b_sort[zz]]
         odtmp = voigt_tau(par, wdata, logn=True)
         for vv in range(HIwav.size):
+            if (1.0+z_sort[zz])*HIwav[vv] < (1.0+zmax)*912.0:
+                # This H I line of this absorber is at a lower wavelength than the LL of the highest redshift LLS
+                continue
             amx = np.argmax(odtmp[:, vv])
             pixdiff = widarr - amx
 
@@ -127,7 +135,7 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
             tst = np.where((odtmp[:, vv] > maxodv[:, 0]) &
                            (odtmp[:, vv] > snr_thresh / snr) &
                            (np.abs(pixdiff) < 1000))[0]
-            if fdata[amx] > limsat:
+            if fdata[amx] > limsat*0.5:
                 if tst.size == 0:
                     # Does not contribute maximum optical depth - try next
                     tst = np.where((odtmp[:, vv] > maxodv[:, 1]) &
@@ -217,11 +225,11 @@ pdb.set_trace()
 # Save the ID_labels and the data
 print("Saving the ID_labels: Check the following sizes are the same")
 print(ID_labels.shape, fdata_all.shape)
-np.save(fname.replace(".npy", "_fluxonly.npy"), fdata_all)
-np.save(fname.replace(".npy", "_IDlabelonly.npy"), ID_labels)
-np.save(fname.replace(".npy", "_Nlabelonly.npy"), N_labels)
-np.save(fname.replace(".npy", "_blabelonly.npy"), b_labels)
-np.save(fname.replace(".npy", "_zlabelonly.npy"), z_labels)
+np.save(fname.replace(".npy", "_fluxonly_{0:d}.npy".format(nspec)), fdata_all)
+np.save(fname.replace(".npy", "_IDlabelonly_{0:d}.npy".format(nspec)), ID_labels)
+np.save(fname.replace(".npy", "_Nlabelonly_{0:d}.npy".format(nspec)), N_labels)
+np.save(fname.replace(".npy", "_blabelonly_{0:d}.npy".format(nspec)), b_labels)
+np.save(fname.replace(".npy", "_zlabelonly_{0:d}.npy".format(nspec)), z_labels)
 
 if True:
     plt.plot(fdata_all[0, :] * 30)
