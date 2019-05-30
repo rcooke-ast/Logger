@@ -18,7 +18,7 @@ from keras.layers import Dropout, BatchNormalization
 
 vpix = 2.5   # Size of each pixel in km/s
 scalefact = np.log(1.0 + vpix/299792.458)
-spec_len = 257  # Number of pixels to use in each segment (must be odd)
+spec_len = 129  # Number of pixels to use in each segment (must be odd)
 nHIwav = 4    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
@@ -40,11 +40,11 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
-    fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_fluxonly.npy".format(extstr))
-    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_IDlabelonly.npy".format(extstr)).astype(np.int)
-    Nlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_Nlabelonly.npy".format(extstr))
-    blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_blabelonly.npy".format(extstr))
-    zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_zlabelonly.npy".format(extstr))
+    fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_fluxonly.npy".format(extstr, nHIwav))
+    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly.npy".format(extstr, nHIwav)).astype(np.int)
+    Nlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly.npy".format(extstr, nHIwav))
+    blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly.npy".format(extstr, nHIwav))
+    zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly.npy".format(extstr, nHIwav))
     ntrain = int(ftrain*fdata_all.shape[0])
     speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
     trainX = fdata_all[:ntrain, -speccut:]
@@ -56,7 +56,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
         pdb.set_trace()
         from matplotlib import pyplot as plt
         plt.plot(trainX[0, :], 'k-', drawstyle='steps')
-        tlocs = np.where(trainz[0, :] == 1)-1
+        tlocs = np.where(trainz[0, :] == 1)[0]-1
         plt.vlines(tlocs, 0, 1, 'r', '-')
         plt.show()
     testX = fdata_all[ntrain:, -speccut:]
@@ -109,11 +109,11 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     concat_arr = []
     for ll in range(nHIwav):
         inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
-        conv11 = Conv1D(filters=128, kernel_size=4, activation='relu')(inputs[-1])
-        pool11 = MaxPooling1D(pool_size=5)(conv11)
+        conv11 = Conv1D(filters=128, kernel_size=3, activation='relu')(inputs[-1])
+        pool11 = MaxPooling1D(pool_size=3)(conv11)
         norm11 = BatchNormalization()(pool11)
-        conv12 = Conv1D(filters=128, kernel_size=8, activation='relu')(norm11)
-        pool12 = MaxPooling1D(pool_size=5)(conv12)
+        conv12 = Conv1D(filters=128, kernel_size=5, activation='relu')(norm11)
+        pool12 = MaxPooling1D(pool_size=3)(conv12)
         norm12 = BatchNormalization()(pool12)
 #        conv13 = Conv1D(filters=128, kernel_size=16, activation='relu')(norm12)
 #        pool13 = MaxPooling1D(pool_size=2)(conv13)

@@ -19,7 +19,7 @@ from matplotlib import pyplot as plt
 
 vpix = 2.5   # Size of each pixel in km/s
 scalefact = np.log(1.0 + vpix/299792.458)
-spec_len = 257  # Number of pixels to use in each segment (must be odd)
+spec_len = 33  # Number of pixels to use in each segment (must be odd)
 nHIwav = 1    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
@@ -71,11 +71,11 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
-    fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_fluxonly.npy".format(extstr))
-    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_IDlabelonly.npy".format(extstr)).astype(np.int)
-    Nlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_Nlabelonly.npy".format(extstr))
-    blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_blabelonly.npy".format(extstr))
-    zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_zlabelonly.npy".format(extstr))
+    fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy1_fluxonly.npy".format(extstr))
+    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy1_IDlabelonly.npy".format(extstr)).astype(np.int)
+    Nlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy1_Nlabelonly.npy".format(extstr))
+    blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy1_blabelonly.npy".format(extstr))
+    zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy1_zlabelonly.npy".format(extstr))
     ntrain = int(ftrain*fdata_all.shape[0])
     npred = 2
     speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
@@ -99,7 +99,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
         tlocs = np.where(trainz[0, :] == 1)[0]-1
         plt.vlines(tlocs, 0, 1, 'r', '-')
         plt.show()
-    print(trainX.shape[1], trainX.shape[1]//epochs, trainX.shape[1]%epochs)
+    #print(trainX.shape[1], trainX.shape[1]//epochs, trainX.shape[1]%epochs)
     return trainX, trainy, trainN, trainz, trainb,\
            testX, testy, testN, testz, testb,\
            predX, predy, predN, predz, predb
@@ -147,21 +147,21 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     concat_arr = []
     for ll in range(nHIwav):
         inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
-        conv11 = Conv1D(filters=128, kernel_size=16, activation='relu')(inputs[-1])
-        pool11 = MaxPooling1D(pool_size=5)(conv11)
-        #norm11 = BatchNormalization()(pool11)
-        conv12 = Conv1D(filters=128, kernel_size=32, activation='relu')(pool11)
-        pool12 = MaxPooling1D(pool_size=5)(conv12)
-        #norm12 = BatchNormalization()(pool12)
-#        conv13 = Conv1D(filters=128, kernel_size=16, activation='relu')(norm12)
+        conv11 = Conv1D(filters=128, kernel_size=3, activation='relu')(inputs[-1])
+#        pool11 = MaxPooling1D(pool_size=2)(conv11)
+        norm11 = BatchNormalization()(conv11)
+        conv12 = Conv1D(filters=128, kernel_size=3, activation='relu')(norm11)
+#        pool12 = MaxPooling1D(pool_size=2)(conv12)
+        norm12 = BatchNormalization()(conv12)
+        conv13 = Conv1D(filters=128, kernel_size=6, activation='relu')(norm12)
 #        pool13 = MaxPooling1D(pool_size=2)(conv13)
-#        norm13 = BatchNormalization()(pool13)
+        norm13 = BatchNormalization()(conv13)
 #        concat_arr.append(Flatten()(norm12))
     # merge input models
-    merge = Flatten()(pool12)
+    merge = Flatten()(inputs[-1])
     # interpretation model
     #hidden2 = Dense(100, activation='relu')(hidden1)
-    fullcon = Dense(300, activation='relu')(merge)
+    fullcon = Dense(100000, activation='relu')(merge)
     ID_output = Dense(1+nHIwav, activation='softmax', name='ID_output')(fullcon)
     N_output = Dense(1, activation='linear', name='N_output')(fullcon)
     z_output = Dense(1, activation='linear', name='z_output')(fullcon)
@@ -174,9 +174,13 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     # Compile
     loss = {'ID_output': 'categorical_crossentropy',
             'N_output': mse_mask(),
-            'z_output': 'mse',
+            'z_output': mse_mask(),
             'b_output': mse_mask()}
-    model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
+    loss_weights = {'ID_output': 1.0,
+                    'N_output': 1.0,
+                    'z_output': 0.01,
+                    'b_output': 0.1}
+    model.compile(loss=loss, loss_weights=loss_weights, optimizer='adam', metrics=['accuracy'])
     # Fit network
     model.fit_generator(
         generate_data(trainX, trainy, trainN, trainz, trainb),
@@ -241,4 +245,4 @@ def localise_features(repeats=3, epochs=10):
 
 
 # run the experiment
-localise_features(epochs=10)
+localise_features(epochs=30)

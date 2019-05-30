@@ -10,7 +10,7 @@ from pyigm.continuum import quasar as pycq
 from scipy.special import wofz, erf
 import pdb
 
-nHIwav = 4
+nHIwav = 1
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:3+nHIwav]
@@ -228,11 +228,11 @@ pdb.set_trace()
 # Save the ID_labels and the data
 print("Saving the ID_labels: Check the following sizes are the same")
 print(ID_labels.shape, fdata_all.shape)
-np.save(fname.replace(".npy", "_fluxonly_{0:d}.npy".format(nspec)), fdata_all)
-np.save(fname.replace(".npy", "_IDlabelonly_{0:d}.npy".format(nspec)), ID_labels)
-np.save(fname.replace(".npy", "_Nlabelonly_{0:d}.npy".format(nspec)), N_labels)
-np.save(fname.replace(".npy", "_blabelonly_{0:d}.npy".format(nspec)), b_labels)
-np.save(fname.replace(".npy", "_zlabelonly_{0:d}.npy".format(nspec)), z_labels)
+np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly.npy".format(nHIwav)), fdata_all)
+np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly.npy".format(nHIwav)), ID_labels)
+np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly.npy".format(nHIwav)), N_labels)
+np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly.npy".format(nHIwav)), b_labels)
+np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly.npy".format(nHIwav)), z_labels)
 
 if True:
     ispec=5
