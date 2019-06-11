@@ -37,7 +37,8 @@ velosub = 299792.458*(wavesub - lam)/lam
 def get_model(wav, theta):
     tau = np.zeros(wav.size)
     for th in theta:
-        tau += util.voigt_tau(wav, walk_cold, th, walk_bval, lam, fvl, gam)
+        ntau = util.voigt_tau(wav, walk_cold, th, walk_bval, lam, fvl, gam)
+        tau += ntau
     modflux = np.exp(-tau)
     convflux = util.convolve_spec(wav, modflux, vfwhm)
     return util.rebin_subpix(convflux, nsubpix=nsubpix)
@@ -63,8 +64,9 @@ def lnprob(theta, x, y, yerr):
     return retval.reshape(theta.shape)
 
 
-ndim, nwalkers, nsteps = 1, 1000, 500
+ndim, nwalkers, nsteps = 1, 100, 500
 pr_min, pr_max = wmin/lam - 1.0, wmax/lam-1.0
+pr_min, pr_max = -1.0e-5, 1.0e-5
 pos = np.array([[np.random.uniform(pr_min, pr_max) for i in range(nwalkers)]]).T
 
 # Create the sampler, and set vectorize to be true to get all the samples
