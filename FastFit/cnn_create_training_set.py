@@ -1,4 +1,5 @@
 import os
+import sys
 import pdb
 import time
 import numpy as np
@@ -468,9 +469,9 @@ if __name__ == "__main__":
     elif execute_task == 2:
         # Create a series of QSO spectra
         zem = 3.0
-        ispec = 25000
+        ispec = int(sys.argv[1])#25000
         numspec = 1000
-        ncpus = 4
+        ncpus = 10
         snrs = [0]
         if multip:
             for snr in snrs:
@@ -484,6 +485,7 @@ if __name__ == "__main__":
                 pool.join()
                 map(ApplyResult.wait, async_results)
         else:
+            seed = np.arange(numspec) + ispec
             cnn_qsospec(zem, numspec, ispec, seed, snrs=snrs)
     else:
         pass
