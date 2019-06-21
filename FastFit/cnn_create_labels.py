@@ -227,8 +227,6 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
 if __name__ == "__main__":
     # Load the data
     ispec = int(sys.argv[1])
-    print(ispec)
-    sys.exit()
     plotcont = False
     plotlabl = False
     zem = 3.0
