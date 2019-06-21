@@ -52,31 +52,34 @@ def collect_data_qsospec(filelist, rmdata=False):
             Ndata_all = np.append(Ndata_all, Nout, axis=0)
             bdata_all = np.append(bdata_all, bout, axis=0)
 
-        # Prepare the output filename
-        dspl = fname0.split("/")
-        fspl = dspl[-1].split("_")
-        fspl[-2] = "nspec{0:d}".format(zdata_all.shape[0])
-        dspl[-1] = "_".join(fspl)
-        outname = "/".join(dspl)
+    # Prepare the output filename
+    dspl = fname0.split("/")
+    fspl = dspl[-1].split("_")
+    fspl[-2] = "nspec{0:d}".format(zdata_all.shape[0])
+    dspl[-1] = "_".join(fspl)
+    outname = "/".join(dspl)
 
-        # Save the data into a single file
+    # Save the data into a single file
+    if os.path.exists(outname):
+        print("WARNING :: path exists!", outname)
+    else:
         np.save(outname, fdata_all)
-        np.save(outname.replace("fluxspec", "zvals"), zdata_all)
-        np.save(outname.replace("fluxspec", "Nvals"), Ndata_all)
-        np.save(outname.replace("fluxspec", "bvals"), bdata_all)
+    np.save(outname.replace("fluxspec", "zvals"), zdata_all)
+    np.save(outname.replace("fluxspec", "Nvals"), Ndata_all)
+    np.save(outname.replace("fluxspec", "bvals"), bdata_all)
 
-        # Delete the individual files that are no longer needed
-        # if rmdata:
-        #     print("Removing individual files...")
-        #     for nrun in range(nruns):
-        #         zstr = "zem{0:.2f}".format(zem)
-        #         sstr = "snr{0:d}".format(int(snr))
-        #         nstr = "npx{0:d}".format(int(numseg))
-        #         extstr = "{0:s}_{1:s}_{2:s}_nrun{3:d}".format(zstr, sstr, nstr, nrun)
-        #         for rmstr in rmfiles:
-        #             fname = "train_data/cnn_img_{0:s}_{1:s}.npy".format(rmstr, extstr)
-        #             os.remove(fname)
-        #             print("  Removed: {0:s}".format(fname))
+    # Delete the individual files that are no longer needed
+    # if rmdata:
+    #     print("Removing individual files...")
+    #     for nrun in range(nruns):
+    #         zstr = "zem{0:.2f}".format(zem)
+    #         sstr = "snr{0:d}".format(int(snr))
+    #         nstr = "npx{0:d}".format(int(numseg))
+    #         extstr = "{0:s}_{1:s}_{2:s}_nrun{3:d}".format(zstr, sstr, nstr, nrun)
+    #         for rmstr in rmfiles:
+    #             fname = "train_data/cnn_img_{0:s}_{1:s}.npy".format(rmstr, extstr)
+    #             os.remove(fname)
+    #             print("  Removed: {0:s}".format(fname))
     return
 
 
