@@ -293,7 +293,7 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, snr=30, plotsegs=False
     return fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all
 
 
-def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
+def cnn_qsospec(zem=3.0, numspec=1, ispec=0, seed=None, snrs=[30], plotsegs=False):
     """
     zem = qso redshift
     numspec = number of spectra to generate
@@ -358,7 +358,7 @@ def cnn_qsospec(zem=3.0, numspec=1, seed=None, snrs=[30], plotsegs=False):
         # Save the data into a single file
         zstr = "zem{0:.2f}".format(zem)
         sstr = "snr{0:d}".format(int(snr))
-        extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
+        extstr = "{0:s}_{1:s}_nspec{2:d}_i{3:d}".format(zstr, sstr, numspec, ispec)
         np.save("train_data/cnn_qsospec_fluxspec_{0:s}".format(extstr), fdata_all[ss])
         np.save("train_data/cnn_qsospec_zvals_{0:s}".format(extstr), zdata_all[ss])
         np.save("train_data/cnn_qsospec_Nvals_{0:s}".format(extstr), Ndata_all[ss])
@@ -468,10 +468,11 @@ if __name__ == "__main__":
     elif execute_task == 2:
         # Create a series of QSO spectra
         zem = 3.0
-        numspec = 5000
-        snrs = [0, 20, 50, 100, 200]
-        seed = np.arange(numspec)
-        cnn_qsospec(zem, numspec, seed, snrs=snrs)
+        ispec = 22000
+        numspec = 3000
+        snrs = [0]
+        seed = np.arange(numspec)+ispec
+        cnn_qsospec(zem, numspec, ispec, seed, snrs=snrs)
     else:
         pass
     tottime = time.time() - starttime
