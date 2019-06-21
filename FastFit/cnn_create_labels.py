@@ -42,21 +42,40 @@ def voigt_tau(par, wavein, logn=True):
     return tau
 
 
-def load_dataset(zem=3.0, snr=0, numspec=20, normalise=False):
-    zstr = "zem{0:.2f}".format(zem)
-    sstr = "snr{0:d}".format(int(snr))
-    extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
-    fname = "train_data/cnn_qsospec_fluxspec_{0:s}.npy".format(extstr)
-    wfdata_all = np.load(fname)
-    wdata = wfdata_all[0, :]
-    fdata_all = wfdata_all[1:, :]
-    zdata_all = np.load("train_data/cnn_qsospec_zvals_{0:s}.npy".format(extstr))
-    Ndata_all = np.load("train_data/cnn_qsospec_Nvals_{0:s}.npy".format(extstr))
-    bdata_all = np.load("train_data/cnn_qsospec_bvals_{0:s}.npy".format(extstr))
-    if normalise:
-        for ispec in range(fdata_all.shape[0]):
-            fdata_all[ispec, :] /= generate_continuum(ispec, wdata)
-    return fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all
+def load_dataset(filelist, normalise=False):
+    flist = open(filelist, 'r').readlines()
+    mst_fspec = np.array([])
+    mst_Nvals = np.array([])
+    mst_zvals = np.array([])
+    mst_bvals = np.array([])
+    for ff in range(len(flist)):
+        fname = flist[ff].strip('\n')
+        Nname = fname.replace('fluxspec', 'Nvals')
+        zname = fname.replace('fluxspec', 'zvals')
+        bname = fname.replace('fluxspec', 'bvals')
+        # Load the data
+        wfdata_all = np.load(fname)
+        if ff == 0:
+            wdata = wfdata_all[0, :]
+        fdata_all = wfdata_all[1:, :]
+        zdata_all = np.load(zname)
+        Ndata_all = np.load(Nname)
+        bdata_all = np.load(bname)
+        if normalise:
+            for ispec in range(fdata_all.shape[0]):
+                fdata_all[ispec, :] /= generate_continuum(ispec, wdata)
+        # Append to master arrays
+        if ff == 0:
+            mst_fspec = fdata_all.copy()
+            mst_Nvals = Ndata_all.copy()
+            mst_zvals = zdata_all.copy()
+            mst_bvals = bdata_all.copy()
+        else:
+            mst_fspec = np.append(mst_fspec, fdata_all.copy(), axis=)
+            mst_Nvals = np.append(mst_Nvals, Ndata_all.copy(), axis=)
+            mst_zvals = np.append(mst_zvals, zdata_all.copy(), axis=)
+            mst_bvals = np.append(mst_bvals, bdata_all.copy(), axis=)
+    return fname, mst_fspec, wdata, mst_zvals, mst_Nvals, mst_bvals
 
 
 def generate_continuum(seed, wave, zqso=3.0):
