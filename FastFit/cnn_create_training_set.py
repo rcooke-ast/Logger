@@ -17,7 +17,7 @@ def collect_data_qsospec(filelist, rmdata=False):
     print("Collecting the fake quasar spectra into a single file")
     files = open(filelist, 'r').readlines()
     for dd in range(len(files)):
-        fname = filelist.strip("\n")
+        fname = files[dd].strip("\n")
         print("Collecting file: ", fname)
         fdata = np.load(fname)
         zdata = np.load(fname.replace("fluxspec", "zvals"))
