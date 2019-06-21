@@ -1,4 +1,5 @@
 import os
+import sys
 import pdb
 import time
 import numpy as np
@@ -11,7 +12,75 @@ from linetools.spectra.xspectrum1d import XSpectrum1D
 atomic = load_atomic()
 
 
-def collect_data(zem, snr, numwav, nruns, rmdata=False):
+def collect_data_qsospec(filelist, rmdata=False):
+    #rmfiles = ["fluxspec", "wavespec", "zvals", "Nvals", "bvals"]
+    print("Collecting the fake quasar spectra into a single file")
+    files = open(filelist, 'r').readlines()
+    for dd in range(len(files)):
+        fname = filelist.strip("\n")
+        print("Collecting file: ", fname)
+        fdata = np.load(fname)
+        zdata = np.load(fname.replace("fluxspec", "zvals"))
+        Ndata = np.load(fname.replace("fluxspec", "Nvals"))
+        bdata = np.load(fname.replace("fluxspec", "bvals"))
+        if dd == 0:
+            fname0 = fname
+            # Initialize
+            fdata_all = fdata.copy()
+            zdata_all = zdata.copy()
+            Ndata_all = Ndata.copy()
+            bdata_all = bdata.copy()
+            numNzb_all = zdata_all.shape[1]
+        else:
+            fdata_all = np.append(fdata_all, fdata.copy()[1:,:], axis=0) # Ignore wavelength
+            # Pad arrays as needed
+            zshp = zdata.shape[1]
+            zout = zdata.copy()
+            Nout = Ndata.copy()
+            bout = bdata.copy()
+            if numNzb_all < zshp:
+                zdata_all = np.pad(zdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
+                Ndata_all = np.pad(Ndata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
+                bdata_all = np.pad(bdata_all, ((0, 0), (0, zshp - numNzb_all)), 'constant', constant_values=-1)
+                # Update the max array size
+                numNzb_all = zshp
+            else:
+                zout = np.pad(zout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                Nout = np.pad(Nout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+                bout = np.pad(bout, ((0, 0), (0, numNzb_all - zshp)), 'constant', constant_values=-1)
+            zdata_all = np.append(zdata_all, zout, axis=0)
+            Ndata_all = np.append(Ndata_all, Nout, axis=0)
+            bdata_all = np.append(bdata_all, bout, axis=0)
+
+        # Prepare the output filename
+        dspl = fname0.split("/")
+        fspl = dspl[-1].split("_")
+        fspl[-2] = "nspec{0:d}".format(zdata_all.shape[0])
+        dspl[-1] = "_".join(fspl)
+        outname = "/".join(dspl)
+
+        # Save the data into a single file
+        np.save(outname, fdata_all)
+        np.save(outname.replace("fluxspec", "zvals"), zdata_all)
+        np.save(outname.replace("fluxspec", "Nvals"), Ndata_all)
+        np.save(outname.replace("fluxspec", "bvals"), bdata_all)
+
+        # Delete the individual files that are no longer needed
+        # if rmdata:
+        #     print("Removing individual files...")
+        #     for nrun in range(nruns):
+        #         zstr = "zem{0:.2f}".format(zem)
+        #         sstr = "snr{0:d}".format(int(snr))
+        #         nstr = "npx{0:d}".format(int(numseg))
+        #         extstr = "{0:s}_{1:s}_{2:s}_nrun{3:d}".format(zstr, sstr, nstr, nrun)
+        #         for rmstr in rmfiles:
+        #             fname = "train_data/cnn_img_{0:s}_{1:s}.npy".format(rmstr, extstr)
+        #             os.remove(fname)
+        #             print("  Removed: {0:s}".format(fname))
+    return
+
+
+def collect_data_lyman_images(zem, snr, numwav, nruns, rmdata=False):
     print("Collecting the data into a single file")
     rmfiles = ["fluxspec", "wavespec", "zvals", "Nvals", "bvals"]
     for numseg in numwav:
@@ -293,7 +362,7 @@ def cnn_numabs(zem=3.0, numseg=512, numspec=1, seed=None, snr=30, plotsegs=False
     return fdata_all, wdata_all, ldata_all, zdata_all, Ndata_all, bdata_all
 
 
-def cnn_qsospec(zem=3.0, numspec=1, ispec=0, seed=None, snrs=[30], plotsegs=False):
+def cnn_qsospec(zem=3.0, numspec=1, ispec=0, seed=None, snrs=[30]):
     """
     zem = qso redshift
     numspec = number of spectra to generate
@@ -372,7 +441,8 @@ if __name__ == "__main__":
     # 0 = Create small strips around Lyman-alpha lines
     # 1 = Create small images of the Lyman series
     # 2 = Create a series of synthetic quasar spectra with H I Lyman forest lines
-    execute_task = 2
+    # 3 = Collect synthetic quasar spectra into a single file
+    execute_task = 3
     multip = True  # Multiprocess?
     starttime = time.time()
 
@@ -462,17 +532,33 @@ if __name__ == "__main__":
                 pool.join()
                 map(ApplyResult.wait, async_results)
                 # Collect all data into a single file
-                collect_data(zem, snr, numwav, nruns, rmdata=True)
+                collect_data_lyman_images(zem, snr, numwav, nruns, rmdata=True)
         else:
             cnn_lyman_images(zem, numwav, numlym, numspec, snrs[0], 0)
     elif execute_task == 2:
         # Create a series of QSO spectra
         zem = 3.0
-        ispec = 22000
-        numspec = 3000
+        ispec = int(sys.argv[1])#25000
+        numspec = 1000
+        ncpus = 10
         snrs = [0]
-        seed = np.arange(numspec)+ispec
-        cnn_qsospec(zem, numspec, ispec, seed, snrs=snrs)
+        if multip:
+            for snr in snrs:
+                pool = Pool(processes=ncpus)
+                async_results = []
+                for jj in range(ncpus):
+                    iispec = ispec + jj * numspec
+                    seed = np.arange(numspec) + iispec
+                    async_results.append(pool.apply_async(cnn_qsospec, (zem, numspec, iispec, seed, snrs)))
+                pool.close()
+                pool.join()
+                map(ApplyResult.wait, async_results)
+        else:
+            seed = np.arange(numspec) + ispec
+            cnn_qsospec(zem, numspec, ispec, seed, snrs=snrs)
+    elif execute_task == 3:
+        filelist = "files.list"
+        collect_data_qsospec(filelist, rmdata=False)
     else:
         pass
     tottime = time.time() - starttime

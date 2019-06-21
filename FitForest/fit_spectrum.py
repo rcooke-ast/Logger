@@ -183,7 +183,7 @@ class SelectRegions(object):
 
     def draw_lines(self):
         """
-        Draw labels on the absorption lines for the input redshift
+        Draw ID_labels on the absorption lines for the input redshift
         """
 #        if self.lines_act.size == 0:
             # There are no model lines
@@ -1427,7 +1427,7 @@ class AbsorptionLines:
         else:
             parlines += ["plot dims 3x1"]
             parlines += ["plot ticklabels True"]
-            parlines += ["plot labels True"]
+            parlines += ["plot ID_labels True"]
             parlines += ["plot fitregions True"]
             parlines += ["plot fits True"]
         return parlines
