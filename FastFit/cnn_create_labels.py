@@ -1,6 +1,7 @@
 # This script reads the spectra generated with
 # cnn_create_training_set and generates some ID_labels
 import sys
+import warnings
 import numpy as np
 from matplotlib import pyplot as plt
 from multiprocessing import Pool, cpu_count
@@ -56,10 +57,10 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
     bdata_all = np.load("train_data/cnn_qsospec_bvals_{0:s}.npy".format(extstr))
     if normalise:
         for ii in range(fdata_all.shape[0]):
-            fdata_all[ispec, :] /= generate_continuum(ispec+ii, wdata)
-            if np.max(fdata_all[ispec, :]) > 1.0:
-                print("WARNING - max flux exceeded - must be a continuum error:")
-                print(ispec, ii, ii+ispec, np.max(fdata_all[ispec, :]))
+            fdata_all[ii, :] /= generate_continuum(ispec+ii, wdata)
+            if np.max(fdata_all[ii, :]) > 1.0:
+                warnings.warn("WARNING - max flux exceeded - must be a continuum error:")
+                warnings.warn("{0:d} {1:d} {2:d} {3:f}".format(ispec, ii, ii+ispec, np.max(fdata_all[ispec, :])))
     return fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all
 
 
