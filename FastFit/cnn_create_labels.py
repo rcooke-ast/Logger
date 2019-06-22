@@ -57,6 +57,8 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
     bdata_all = np.load("train_data/cnn_qsospec_bvals_{0:s}.npy".format(extstr))
     if normalise:
         for ii in range(fdata_all.shape[0]):
+            if ii%100 == 0:
+                print(ii+1, "/", fdata_all.shape[0])
             fdata_all[ii, :] /= generate_continuum(ispec+ii, wdata)
             if np.max(fdata_all[ii, :]) > 1.0:
                 warnings.warn("WARNING - max flux exceeded - must be a continuum error:")
