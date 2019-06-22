@@ -107,7 +107,7 @@ def generate_continuum(seed, wave, zqso=3.0):
     return cspl(wave)
 
 
-def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3.0, snr=0, snr_thresh=1.0, Nstore=2):
+def generate_labels(ispec, wdata, fdata, zdata, Ndata, bdata, snr=0, snr_thresh=1.0, Nstore=2):
     """
     Nstore : maximum number of absorption profiles that contribute to a given pixel
     """
@@ -115,7 +115,7 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
         # For perfec data, assume S/N is very high
         snr = 200.0
     # Calculate the bluest Lyman series line wavelength of the highest redshift absorber
-    wlim = (1.0+np.max(zdata_all[ispec, :]))*atmdata["Wavelength"][ww][3+nHIwav]
+    wlim = (1.0+np.max(zdata))*atmdata["Wavelength"][ww][3+nHIwav]
     # Prepare some label arrays
     ID_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.int)
     N_labels = np.zeros((wdata.shape[0], Nstore), dtype=np.float)
@@ -129,10 +129,10 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
     fc = erf(fact/2.0)  # Fraction of the profile containing the FWHM (i.e. the probability of being within the FWHM)
     dd = ispec
     # Sort by decreasing column density
-    srted = np.argsort(Ndata_all[ispec, :])[::-1]
-    N_sort = Ndata_all[ispec, :][srted]
-    z_sort = zdata_all[ispec, :][srted]
-    b_sort = bdata_all[ispec, :][srted]
+    srted = np.argsort(Ndata)[::-1]
+    N_sort = Ndata[srted]
+    z_sort = zdata[srted]
+    b_sort = bdata[srted]
     wlc = np.where(N_sort > 17.0)
     if wlc[0].size == 0:
         zmax = 0.0
@@ -221,7 +221,7 @@ def generate_labels(ispec, wdata, fdata, zdata_all, Ndata_all, bdata_all, zqso=3
                 #     ID_labels[amin] = vv+1
                 #     N_labels[amin] = Ndata_all[ispec, zz]
                 #     b_labels[amin] = bdata_all[ispec, zz]
-    return ID_labels, N_labels, b_labels, z_labels
+    return ID_labels, N_labels, b_labels, z_labels, ispec
 
 
 if __name__ == "__main__":
@@ -229,8 +229,10 @@ if __name__ == "__main__":
     ispec = int(sys.argv[1])
     plotcont = False
     plotlabl = False
+    multip = True
     zem = 3.0
     snr = 0
+    ncpus = 10
     print("Loading dataset...")
     fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(zem, snr, numspec=25000, ispec=ispec, normalise=True)
     print("Complete")
@@ -239,12 +241,30 @@ if __name__ == "__main__":
     N_labels = np.zeros((nspec, wdata.shape[0], 2))
     b_labels = np.zeros((nspec, wdata.shape[0], 2))
     z_labels = np.zeros((nspec, wdata.shape[0], 2))
-    for ispec in range(nspec):
-        # if ispec > 1: continue
-        ID_labels[ispec, :, :], \
-        N_labels[ispec, :, :], \
-        b_labels[ispec, :, :], \
-        z_labels[ispec, :, :] = generate_labels(ispec, wdata, fdata_all[ispec, :], zdata_all, Ndata_all, bdata_all, snr=snr)
+
+    if multip:
+        pool = Pool(processes=ncpus)
+        async_results = []
+        for iispec in range(nspec):
+            async_results.append(pool.apply_async(generate_labels, (iispec, wdata, fdata_all[iispec, :], zdata_all[iispec, :], Ndata_all[iispec, :], bdata_all[iispec, :], snr)))
+        pool.close()
+        pool.join()
+        map(ApplyResult.wait, async_results)
+        for jj in range(nspec):
+            getVal = async_results[jj].get()
+            # if ispec > 1: continue
+            iispec = getVal[4]
+            ID_labels[iispec, :, :] = getVal[0].copy()
+            N_labels[iispec, :, :] = getVal[1].copy()
+            b_labels[iispec, :, :] = getVal[2].copy()
+            z_labels[iispec, :, :] = getVal[3].copy()
+    else:
+        for iispec in range(nspec):
+            # if ispec > 1: continue
+            ID_labels[iispec, :, :], \
+            N_labels[iispec, :, :], \
+            b_labels[iispec, :, :], \
+            z_labels[iispec, :, :], _ = generate_labels(iispec, wdata, fdata_all[iispec, :], zdata_all[iispec, :], Ndata_all[iispec, :], bdata_all[iispec, :], snr=snr)
 
     # Plot the ID_labels to ensure this has been done correctly
     if plotlabl:
