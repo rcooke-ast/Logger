@@ -49,13 +49,13 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}_i{3:d}".format(zstr, sstr, numspec, ispec)
     fname = "train_data/cnn_qsospec_fluxspec_{0:s}.npy".format(extstr)
-    wfdata_all = np.load(fname)
-    wdata = wfdata_all[0, :]
-    fdata_all = wfdata_all[1:, :]
     zdata_all = np.load("train_data/cnn_qsospec_zvals_{0:s}.npy".format(extstr))
     Ndata_all = np.load("train_data/cnn_qsospec_Nvals_{0:s}.npy".format(extstr))
     bdata_all = np.load("train_data/cnn_qsospec_bvals_{0:s}.npy".format(extstr))
     if normalise:
+        wfdata_all = np.load(fname)
+        wdata = wfdata_all[0, :]
+        fdata_all = wfdata_all[1:, :]
         for ii in range(fdata_all.shape[0]):
             if ii%100 == 0:
                 print(ii+1, "/", fdata_all.shape[0])
@@ -65,8 +65,12 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
             if np.max(fdata_all[ii, :]) > 1.0:
                 warnings.warn("WARNING - max flux exceeded - must be a continuum error:")
                 warnings.warn("{0:d} {1:d} {2:d} {3:f}".format(ispec, ii, ii+ispec, np.max(fdata_all[ispec, :])))
-    np.save(fname.replace(".npy", "_normalised_fluxonly.npy").replace("train_data/", "label_data/"), fdata_all)
-    sys.exit()
+        np.save(fname.replace(".npy", "_normalised_fluxonly.npy").replace("train_data/", "label_data/"), fdata_all)
+        np.save(fname.replace(".npy", "_wave.npy").replace("train_data/", "label_data/"), wdata)
+    else:
+        print("Loading normalised flux data")
+        wdata = np.load(fname.replace(".npy", "_wave.npy").replace("train_data/", "label_data/"))
+        fdata_all = np.load(fname.replace(".npy", "_normalised_fluxonly.npy").replace("train_data/", "label_data/"))
     return fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all
 
 
@@ -243,7 +247,7 @@ if __name__ == "__main__":
     snr = 0
     ncpus = 10
     print("Loading dataset...")
-    fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(zem, snr, numspec=25000, ispec=ispec, normalise=True)
+    fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(zem, snr, numspec=25000, ispec=ispec, normalise=False)
     print("Complete")
     nspec = fdata_all.shape[0]
     ID_labels = np.zeros((jnum, wdata.shape[0], 2))
@@ -298,18 +302,6 @@ if __name__ == "__main__":
         plt.plot(wdata[ww], cont[ww], 'bo', drawstyle='steps')
         plt.show()
 
-    print("WARNING :: By continuing, you will save/overwrite the previously stored label data...")
-    #pdb.set_trace()
-    # Save the ID_labels and the data
-    print("Saving the ID_labels: Check the following sizes are the same")
-    print(ID_labels.shape, fdata_all.shape)
-    exttxt = "_vs{0:d}-ve{1:d}".format(val_start, val_end)
-    #np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), fdata_all)
-    np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), ID_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), N_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), b_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), z_labels)
-
     if False:
         ispec=5
         plt.plot(fdata_all[ispec, :] * 30)
@@ -329,3 +321,15 @@ if __name__ == "__main__":
             plt.plot(wdata, cont, 'r-')
             plt.show()
             plt.clf()
+
+    print("WARNING :: By continuing, you will save/overwrite the previously stored label data...")
+    #pdb.set_trace()
+    # Save the ID_labels and the data
+    #print("Saving the ID_labels: Check the following sizes are the same")
+    #print(ID_labels.shape, fdata_all.shape)
+    exttxt = "_vs{0:d}-ve{1:d}".format(val_start, val_end)
+    #np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), fdata_all)
+    np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), ID_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), N_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), b_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), z_labels)
