@@ -65,6 +65,8 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
             if np.max(fdata_all[ii, :]) > 1.0:
                 warnings.warn("WARNING - max flux exceeded - must be a continuum error:")
                 warnings.warn("{0:d} {1:d} {2:d} {3:f}".format(ispec, ii, ii+ispec, np.max(fdata_all[ispec, :])))
+    np.save(fname.replace(".npy", "_normalised_fluxonly.npy").replace("train_data/", "label_data/"), fdata_all)
+    sys.exit()
     return fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all
 
 
@@ -302,7 +304,7 @@ if __name__ == "__main__":
     print("Saving the ID_labels: Check the following sizes are the same")
     print(ID_labels.shape, fdata_all.shape)
     exttxt = "_vs{0:d}-ve{1:d}".format(val_start, val_end)
-    np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), fdata_all)
+    #np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), fdata_all)
     np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), ID_labels)
     np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), N_labels)
     np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), b_labels)
