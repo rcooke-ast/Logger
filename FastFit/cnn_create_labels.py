@@ -60,6 +60,8 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
             if ii%100 == 0:
                 print(ii+1, "/", fdata_all.shape[0])
             fdata_all[ii, :] /= generate_continuum(ispec+ii, wdata)
+#            print(ii)
+#            if ii > 2: break
             if np.max(fdata_all[ii, :]) > 1.0:
                 warnings.warn("WARNING - max flux exceeded - must be a continuum error:")
                 warnings.warn("{0:d} {1:d} {2:d} {3:f}".format(ispec, ii, ii+ispec, np.max(fdata_all[ispec, :])))
@@ -242,10 +244,10 @@ if __name__ == "__main__":
     fname, fdata_all, wdata, zdata_all, Ndata_all, bdata_all = load_dataset(zem, snr, numspec=25000, ispec=ispec, normalise=True)
     print("Complete")
     nspec = fdata_all.shape[0]
-    ID_labels = np.zeros((nspec, wdata.shape[0], 2))
-    N_labels = np.zeros((nspec, wdata.shape[0], 2))
-    b_labels = np.zeros((nspec, wdata.shape[0], 2))
-    z_labels = np.zeros((nspec, wdata.shape[0], 2))
+    ID_labels = np.zeros((jnum, wdata.shape[0], 2))
+    N_labels = np.zeros((jnum, wdata.shape[0], 2))
+    b_labels = np.zeros((jnum, wdata.shape[0], 2))
+    z_labels = np.zeros((jnum, wdata.shape[0], 2))
 
     val_start = jspc
     val_end = min(nspec, jspc+jnum)
@@ -259,9 +261,9 @@ if __name__ == "__main__":
         pool.join()
         map(ApplyResult.wait, async_results)
         for jj in range(val_start, val_end):
-            getVal = async_results[jj].get()
+            getVal = async_results[jj-val_start].get()
             # if ispec > 1: continue
-            iispec = getVal[4]
+            iispec = getVal[4]-val_start
             ID_labels[iispec, :, :] = getVal[0].copy()
             N_labels[iispec, :, :] = getVal[1].copy()
             b_labels[iispec, :, :] = getVal[2].copy()
