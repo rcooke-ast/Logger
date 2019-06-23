@@ -230,6 +230,8 @@ def generate_labels(ispec, wdata, fdata, zdata, Ndata, bdata, snr=0, snr_thresh=
 if __name__ == "__main__":
     # Load the data
     ispec = int(sys.argv[1])
+    jspc = int(sys.argv[2])
+    jnum = int(sys.argv[3])
     plotcont = False
     plotlabl = False
     multip = True
@@ -245,15 +247,18 @@ if __name__ == "__main__":
     b_labels = np.zeros((nspec, wdata.shape[0], 2))
     z_labels = np.zeros((nspec, wdata.shape[0], 2))
 
+    val_start = jspc
+    val_end = min(nspec, jspc+jnum)
+
     if multip:
         pool = Pool(processes=ncpus)
         async_results = []
-        for iispec in range(nspec):
+        for iispec in range(val_start, val_end):
             async_results.append(pool.apply_async(generate_labels, (iispec, wdata, fdata_all[iispec, :], zdata_all[iispec, :], Ndata_all[iispec, :], bdata_all[iispec, :], snr)))
         pool.close()
         pool.join()
         map(ApplyResult.wait, async_results)
-        for jj in range(nspec):
+        for jj in range(val_start, val_end):
             getVal = async_results[jj].get()
             # if ispec > 1: continue
             iispec = getVal[4]
@@ -294,11 +299,12 @@ if __name__ == "__main__":
     # Save the ID_labels and the data
     print("Saving the ID_labels: Check the following sizes are the same")
     print(ID_labels.shape, fdata_all.shape)
-    np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly.npy".format(nHIwav)).replace("train_data/", "label_data/"), fdata_all)
-    np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly.npy".format(nHIwav)).replace("train_data/", "label_data/"), ID_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly.npy".format(nHIwav)).replace("train_data/", "label_data/"), N_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly.npy".format(nHIwav)).replace("train_data/", "label_data/"), b_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly.npy".format(nHIwav)).replace("train_data/", "label_data/"), z_labels)
+    exttxt = "_vs{0:d}-ve{1:d}".format(val_start, val_end)
+    np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), fdata_all)
+    np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), ID_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), N_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), b_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), z_labels)
 
     if False:
         ispec=5
