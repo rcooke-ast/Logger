@@ -64,7 +64,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0, epochs
     trainN = Nlabel_all[:ntrain, -speccut:, 0]
     trainz = zlabel_all[:ntrain, -speccut:, 0]
     trainb = blabel_all[:ntrain, -speccut:, 0]
-    if True:
+    if False:
         pdb.set_trace()
         from matplotlib import pyplot as plt
         plt.plot(trainX[0, :], 'k-', drawstyle='steps')
