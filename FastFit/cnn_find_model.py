@@ -20,7 +20,7 @@ from keras.layers import Dropout, BatchNormalization
 
 # Limit the number of CPUs to use for training
 ncpus = 120
-K.set_session(K.tf.Session(config=K.tf.ConfigProto(intraintra_op_parallelism_threads=ncpus, inter_op_parallelism_threads=ncpus)))
+K.set_session(K.tf.Session(config=K.tf.ConfigProto(intra_op_parallelism_threads=ncpus, inter_op_parallelism_threads=ncpus)))
 
 
 vpix = 2.5   # Size of each pixel in km/s
@@ -172,7 +172,7 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
         validation_data=generate_data(testX, testy, testN, testz, testb),
         validation_steps=(testX.shape[1] - spec_len)//epochs)
 
-    # Eevaluate model
+    # Evaluate model
 #    _, accuracy
     accuracy = model.evaluate_generator(generate_data(testX, testy, testN, testz, testb),
                                         steps=(testX.shape[1] - spec_len)//epochs,
