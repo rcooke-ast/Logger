@@ -60,8 +60,6 @@ def load_dataset(zem=3.0, snr=0, numspec=25000, ispec=0, normalise=False):
             if ii%100 == 0:
                 print(ii+1, "/", fdata_all.shape[0])
             fdata_all[ii, :] /= generate_continuum(ispec+ii, wdata)
-#            print(ii)
-#            if ii > 2: break
             if np.max(fdata_all[ii, :]) > 1.0:
                 warnings.warn("WARNING - max flux exceeded - must be a continuum error:")
                 warnings.warn("{0:d} {1:d} {2:d} {3:f}".format(ispec, ii, ii+ispec, np.max(fdata_all[ispec, :])))

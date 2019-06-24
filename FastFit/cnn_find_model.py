@@ -1,4 +1,5 @@
 
+import os
 import pdb
 import numpy as np
 from utilities import load_atomic
@@ -7,6 +8,7 @@ from numpy import std
 import tensorflow as tf
 import keras.backend as K
 from keras.utils import plot_model
+from keras.callbacks import ModelCheckpoint, CSVLogger
 from keras.models import Model
 from keras.layers import Input
 from keras.layers import Dense
@@ -15,6 +17,11 @@ from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
 from keras.layers.merge import concatenate
 from keras.layers import Dropout, BatchNormalization
+
+# Limit the number of CPUs to use for training
+ncpus = 120
+K.set_session(K.tf.Session(config=K.tf.ConfigProto(intraintra_op_parallelism_threads=ncpus, inter_op_parallelism_threads=ncpus)))
+
 
 vpix = 2.5   # Size of each pixel in km/s
 scalefact = np.log(1.0 + vpix/299792.458)
@@ -36,15 +43,15 @@ def mse_mask():
     return loss
 
 
-def load_dataset(zem=3.0, snr=0, ftrain=0.75, numspec=20, epochs=10):
+def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0, epochs=10):
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
-    extstr = "{0:s}_{1:s}_nspec{2:d}".format(zstr, sstr, numspec)
-    fdata_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_fluxonly.npy".format(extstr, nHIwav))
-    IDlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly.npy".format(extstr, nHIwav)).astype(np.int)
-    Nlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly.npy".format(extstr, nHIwav))
-    blabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly.npy".format(extstr, nHIwav))
-    zlabel_all = np.load("train_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly.npy".format(extstr, nHIwav))
+    extstr = "{0:s}_{1:s}_nspec{2:d}_i{3:d}".format(zstr, sstr, numspec, ispec)
+    fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr, nHIwav))
+    IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly.npy".format(extstr, nHIwav)).astype(np.int)
+    Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly.npy".format(extstr, nHIwav))
+    blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly.npy".format(extstr, nHIwav))
+    zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly.npy".format(extstr, nHIwav))
     ntrain = int(ftrain*fdata_all.shape[0])
     speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
     trainX = fdata_all[:ntrain, -speccut:]
@@ -105,6 +112,8 @@ def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
 def evaluate_model(trainX, trainy, trainN, trainz, trainb,
                    testX, testy, testN, testz, testb,
                    epochs=10, verbose=1):
+    filepath = os.path.dirname(os.path.abspath(__file__))
+    model_name = "/fit_data/model_nLy{0:d}_speclen{1:d}".format(nHIwav, spec_len)
     inputs = []
     concat_arr = []
     for ll in range(nHIwav):
@@ -132,18 +141,25 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     # Summarize layers
     print(model.summary())
     # Plot graph
-    plot_model(model, to_file='cnn_find_model.png')
+    pngname = filepath + model_name + '.png'
+    plot_model(model, to_file=pngname)
     # Compile
     loss = {'ID_output': 'categorical_crossentropy',
             'N_output': mse_mask(),
             'z_output': mse_mask(),
             'b_output': mse_mask()}
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
+    # Initialise callbacks
+    ckp_name = filepath + model_name + '.hdf5'
+    csv_name = filepath + model_name + '.log'
+    checkpointer = ModelCheckpoint(filepath=ckp_name, verbose=1, save_best_only=True)
+    csv_logger = CSVLogger(csv_name, append=True)
     # Fit network
     model.fit_generator(
         generate_data(trainX, trainy, trainN, trainz, trainb),
         steps_per_epoch=(trainX.shape[1] - spec_len)//epochs,
         epochs=epochs, verbose=verbose,
+        callbacks=[checkpointer, csv_logger],
         validation_data=generate_data(testX, testy, testN, testz, testb),
         validation_steps=(testX.shape[1] - spec_len)//epochs)
 
