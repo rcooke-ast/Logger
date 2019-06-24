@@ -3,8 +3,8 @@ import os
 import pdb
 import numpy as np
 from utilities import load_atomic
-from numpy import mean
-from numpy import std
+from contextlib import redirect_stdout
+from numpy import mean, std
 import tensorflow as tf
 import keras.backend as K
 from keras.utils import plot_model
@@ -148,7 +148,9 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     b_output = Dense(1, activation='linear', name='b_output')(fullcon2)
     model = Model(inputs=inputs, outputs=[ID_output, N_output, z_output, b_output])
     # Summarize layers
-    print(model.summary())
+    with open(filepath + model_name + '.summary', 'w') as f:
+        with redirect_stdout(f):
+            model.summary()
     # Plot graph
     pngname = filepath + model_name + '.png'
     plot_model(model, to_file=pngname)
@@ -177,7 +179,7 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     accuracy = model.evaluate_generator(generate_data(testX, testy, testN, testz, testb),
                                         steps=(testX.shape[1] - spec_len)//epochs,
                                         verbose=0)
-    pdb.set_trace()
+    #pdb.set_trace()
     return accuracy, model.metrics_names
 
 # Gold standard in cross-validation
