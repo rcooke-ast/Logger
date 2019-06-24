@@ -43,20 +43,61 @@ def mse_mask():
     return loss
 
 
+def make_filelist(param, ival=None, zem=3.0, snr=0, numspec=25000):
+    if ival is None:
+        ival = [0, 25000, 50000, 75000, 100000, 125000, 150000, 175000, 200000]
+    sval = [0, 5000, 10000, 15000, 20000]
+    filelist = []
+    for ii in ival:
+        zstr = "zem{0:.2f}".format(zem)
+        sstr = "snr{0:d}".format(int(snr))
+        extxt = "{0:s}_{1:s}_nspec{2:d}_i{3:d}".format(zstr, sstr, numspec, ii)
+        if param == "flux":
+            nchunk = 25000
+            filelist.append("cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly".format(extxt))
+        else:
+            nchunk = 5000
+            for ss in sval:
+                sstxt = "vs{0:d}-ve{1:d}".format(ss, ss+5000)
+                if param == "ID":
+                    filelist.append("cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly_{2:s}".format(extxt, nHIwav, sstxt))
+                elif param == "N":
+                    filelist.append("cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_{2:s}".format(extxt, nHIwav, sstxt))
+                elif param == "z":
+                    filelist.append("cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly_{2:s}".format(extxt, nHIwav, sstxt))
+                elif param == "b":
+                    filelist.append("cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly_{2:s}".format(extxt, nHIwav, sstxt))
+                else:
+                    print("Unrecognised parameter")
+    return filelist, nchunk
+
+
+def load_dask_data(idname):
+    filelist, nchunk = make_filelist(idname)
+
+    chunks = (len(filelist) * (nchunk,), (50302,), (2,))
+    axis = 0
+    dtype = np.dtype(np.float64)
+    mmap_mode = None  # Must be 'r' or None
+    dirname = "label_data/"
+
+    name = 'from-npy-stack-%s' % dirname
+    keys = list(product([name], *[range(len(c)) for c in chunks]))
+    values = [(np.load, os.path.join(dirname, '%s.npy' % filelist[i]), mmap_mode)
+              for i in range(len(chunks[axis]))]
+    dsk = dict(zip(keys, values))
+
+    res = Array(dsk, name, chunks, dtype)
+
+
 def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0, epochs=10):
-    zstr = "zem{0:.2f}".format(zem)
-    sstr = "snr{0:d}".format(int(snr))
-    extstr = "{0:s}_{1:s}_nspec{2:d}_i{3:d}".format(zstr, sstr, numspec, ispec)
-    # fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr, nHIwav))
-    # IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly.npy".format(extstr, nHIwav)).astype(np.int)
-    # Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly.npy".format(extstr, nHIwav))
-    # blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly.npy".format(extstr, nHIwav))
-    # zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly.npy".format(extstr, nHIwav))
-    fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr, nHIwav))[:5000, :]
-    IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly_vs0-ve5000.npy".format(extstr, nHIwav)).astype(np.int)
-    Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))
-    blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly_vs0-ve5000.npy".format(extstr, nHIwav))
-    zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))
+    fdata_all = load_dask_data("ID")
+    print("Need to make sure IDlabel_all is of type int")
+    assert(False)
+    IDlabel_all = load_dask_data("ID")
+    Nlabel_all = load_dask_data("N")
+    blabel_all = load_dask_data("b")
+    zlabel_all = load_dask_data("z")
     ntrain = int(ftrain*fdata_all.shape[0])
     speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
     trainX = fdata_all[:ntrain, -speccut:]
@@ -123,29 +164,25 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     concat_arr = []
     for ll in range(nHIwav):
         inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
-        conv11 = Conv1D(filters=64, kernel_size=3, activation='relu')(inputs[-1])
-        conv12 = Conv1D(filters=64, kernel_size=3, activation='relu')(conv11)
-        pool1  = MaxPooling1D(pool_size=2)(conv12)
-        conv21 = Conv1D(filters=128, kernel_size=3, activation='relu')(pool1)
-        conv22 = Conv1D(filters=128, kernel_size=3, activation='relu')(conv21)
-        pool2  = MaxPooling1D(pool_size=2)(conv22)
-        conv31 = Conv1D(filters=256, kernel_size=3, activation='relu')(pool2)
-        conv32 = Conv1D(filters=256, kernel_size=3, activation='relu')(conv31)
-        pool3  = MaxPooling1D(pool_size=2)(conv32)
-        conv41 = Conv1D(filters=512, kernel_size=3, activation='relu')(pool3)
-        conv42 = Conv1D(filters=512, kernel_size=3, activation='relu')(conv41)
-        pool4  = MaxPooling1D(pool_size=2)(conv42)
-        concat_arr.append(Flatten()(pool4))
+        conv11 = Conv1D(filters=128, kernel_size=3, activation='relu')(inputs[-1])
+        pool11 = MaxPooling1D(pool_size=3)(conv11)
+        norm11 = BatchNormalization()(pool11)
+        conv12 = Conv1D(filters=128, kernel_size=5, activation='relu')(norm11)
+        pool12 = MaxPooling1D(pool_size=3)(conv12)
+        norm12 = BatchNormalization()(pool12)
+#        conv13 = Conv1D(filters=128, kernel_size=16, activation='relu')(norm12)
+#        pool13 = MaxPooling1D(pool_size=2)(conv13)
+#        norm13 = BatchNormalization()(pool13)
+        concat_arr.append(Flatten()(norm12))
     # merge input models
     merge = concatenate(concat_arr)
     # interpretation model
     #hidden2 = Dense(100, activation='relu')(hidden1)
-    fullcon1 = Dense(4096, activation='relu')(merge)
-    fullcon2 = Dense(4096, activation='relu')(fullcon1)
-    ID_output = Dense(1+nHIwav, activation='softmax', name='ID_output')(fullcon2)
-    N_output = Dense(1, activation='linear', name='N_output')(fullcon2)
-    z_output = Dense(1, activation='linear', name='z_output')(fullcon2)
-    b_output = Dense(1, activation='linear', name='b_output')(fullcon2)
+    fullcon = Dense(300, activation='relu')(merge)
+    ID_output = Dense(1+nHIwav, activation='softmax', name='ID_output')(fullcon)
+    N_output = Dense(1, activation='linear', name='N_output')(fullcon)
+    z_output = Dense(1, activation='linear', name='z_output')(fullcon)
+    b_output = Dense(1, activation='linear', name='b_output')(fullcon)
     model = Model(inputs=inputs, outputs=[ID_output, N_output, z_output, b_output])
     # Summarize layers
     print(model.summary())
@@ -223,4 +260,4 @@ def localise_features(repeats=3, epochs=10):
 
 
 # run the experiment
-localise_features(epochs=300)
+localise_features(epochs=50)
