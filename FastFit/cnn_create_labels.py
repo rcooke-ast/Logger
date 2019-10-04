@@ -12,7 +12,7 @@ from pyigm.continuum import quasar as pycq
 from scipy.special import wofz, erf
 import pdb
 
-nHIwav = 4
+nHIwav = 1
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:3+nHIwav]

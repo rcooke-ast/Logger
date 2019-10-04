@@ -18,7 +18,8 @@ def load_atomic(return_HIwav=True):
     Load the atomic transitions data
     """
 #    dir = "/Users/rcooke/Software/ALIS/alis/data/"
-    dir = "/cosma5/data/durham/rcooke/LyaForest/Software/FastFit/"
+    dir = "/home/rcooke/Software/ALIS/alis/data/"
+#    dir = "/cosma5/data/durham/rcooke/LyaForest/Software/FastFit/"
     atmname = "atomic.xml"
     print("Loading atomic data")
     # If the user specifies the atomic data file, make sure that it exists
