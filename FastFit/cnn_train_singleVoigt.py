@@ -145,26 +145,26 @@ def evaluate_model(trainX, trainN, trainb,
     model_name = "/fit_data/svoigt_speclen{0:d}".format(spec_len)
     inputs = []
     concat_arr = []
-    kernsz = [16]
+    kernsz = [32]
     # Construct network
     for kk in range(len(kernsz)):
         # Shape is (batches, steps, channels)
         # For example, a 3-color 1D image of side 100 pixels, dealt in batches of 32 would have a shape=(32,100,3)
         print(spec_len)
         inputs.append(Input(shape=(spec_len, 1), name='kern_{0:d}'.format(kk+1)))
-        conv11 = Conv1D(filters=64, kernel_size=kernsz[kk], activation='relu')(inputs[-1])
-        conv12 = Conv1D(filters=64, kernel_size=kernsz[kk], activation='relu')(conv11)
-        pool1  = MaxPooling1D(pool_size=2)(conv12)
+        conv11 = Conv1D(filters=128, kernel_size=kernsz[kk], activation='relu')(inputs[-1])
+        #conv12 = Conv1D(filters=64, kernel_size=kernsz[kk], activation='relu')(conv11)
+        pool1  = MaxPooling1D(pool_size=2)(conv11)
         conv21 = Conv1D(filters=128, kernel_size=kernsz[kk], activation='relu')(pool1)
-        conv22 = Conv1D(filters=128, kernel_size=16, activation='relu')(conv21)
-        pool2  = MaxPooling1D(pool_size=2)(conv22)
-        conv31 = Conv1D(filters=256, kernel_size=kernsz[kk], activation='relu')(pool2)
-        conv32 = Conv1D(filters=256, kernel_size=3, activation='relu')(conv31)
-        pool3  = MaxPooling1D(pool_size=2)(conv32)
-        conv41 = Conv1D(filters=512, kernel_size=3, activation='relu')(pool3)
-        conv42 = Conv1D(filters=512, kernel_size=3, activation='relu')(conv41)
-        pool4  = MaxPooling1D(pool_size=2)(conv42)
-        concat_arr.append(Flatten()(pool4))
+        #conv22 = Conv1D(filters=128, kernel_size=16, activation='relu')(conv21)
+        pool2  = MaxPooling1D(pool_size=2)(conv21)
+        conv31 = Conv1D(filters=128, kernel_size=kernsz[kk], activation='relu')(pool2)
+        #conv32 = Conv1D(filters=256, kernel_size=3, activation='relu')(conv31)
+        pool3  = MaxPooling1D(pool_size=2)(conv31)
+#        conv41 = Conv1D(filters=512, kernel_size=3, activation='relu')(pool3)
+        #conv42 = Conv1D(filters=512, kernel_size=3, activation='relu')(conv41)
+#        pool4  = MaxPooling1D(pool_size=2)(conv41)
+        concat_arr.append(Flatten()(pool3))
     if len(kernsz) == 1:
         merge = concat_arr[0]
     else:
@@ -172,10 +172,10 @@ def evaluate_model(trainX, trainN, trainb,
         merge = concatenate(concat_arr)
     # Interpretation model
     fullcon1 = Dense(4096, activation='relu')(merge)
-    fullcon2 = Dense(4096, activation='relu')(fullcon1)
-    N_output = Dense(1, activation='linear', name='N_output')(fullcon2)
-    z_output = Dense(1, activation='linear', name='z_output')(fullcon2)
-    b_output = Dense(1, activation='linear', name='b_output')(fullcon2)
+#    fullcon2 = Dense(4096, activation='relu')(fullcon1)
+    N_output = Dense(1, activation='linear', name='N_output')(fullcon1)
+    z_output = Dense(1, activation='linear', name='z_output')(fullcon1)
+    b_output = Dense(1, activation='linear', name='b_output')(fullcon1)
     model = Model(inputs=inputs, outputs=[N_output, z_output, b_output])
     # Make this work on multiple GPUs
     gpumodel = multi_gpu_model(model, gpus=4)
@@ -190,7 +190,7 @@ def evaluate_model(trainX, trainN, trainb,
     loss = {'N_output': mse_mask(),
             'z_output': mse_mask(),
             'b_output': mse_mask()}
-    gpumodel.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
+    gpumodel.compile(loss=loss, optimizer='adam', metrics=['mean_squared_error'])
     # Initialise callbacks
     ckp_name = filepath + model_name + '.hdf5'
     csv_name = filepath + model_name + '.log'

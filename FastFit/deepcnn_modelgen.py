@@ -25,8 +25,8 @@ from keras.layers import Dropout, BatchNormalization
 
 vpix = 2.5   # Size of each pixel in km/s
 scalefact = np.log(1.0 + vpix/299792.458)
-spec_len = 129  # Number of pixels to use in each segment (must be odd)
-nHIwav = 4    # Number of lyman series lines to consider
+spec_len = [129, 65, 33, 17]  # Number of pixels to use in each segment (must be odd)
+nHIwav = 1    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
 HIwav = atmdata["Wavelength"][ww][3:]
@@ -37,8 +37,18 @@ HIfvl = atmdata["fvalue"][ww][3:]
 def mse_mask():
     # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
     def loss(y_true, y_pred):
-        mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+        mask = tf.cast(tf.not_equal(y_true, 0.0), tf.float32)
         return K.mean(mask * K.square(y_pred - y_true), axis=-1)
+    # Return a function
+    return loss
+
+
+# Define custom loss
+def mse_mask_rel():
+    # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
+    def loss(y_true, y_pred):
+        mask = tf.cast(tf.not_equal(y_true, 0.0), tf.float32)
+        return K.mean(mask * K.square(y_pred - y_true) / K.square(1 + tf.abs(y_true)), axis=-1)
     # Return a function
     return loss
 
@@ -47,18 +57,16 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0, epochs
     zstr = "zem{0:.2f}".format(zem)
     sstr = "snr{0:d}".format(int(snr))
     extstr = "{0:s}_{1:s}_nspec{2:d}_i{3:d}".format(zstr, sstr, numspec, ispec)
-    # fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr, nHIwav))
-    # IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly.npy".format(extstr, nHIwav)).astype(np.int)
-    # Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly.npy".format(extstr, nHIwav))
-    # blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly.npy".format(extstr, nHIwav))
-    # zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly.npy".format(extstr, nHIwav))
-    fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr, nHIwav))[:5000, :]
-    IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly_vs0-ve5000.npy".format(extstr, nHIwav)).astype(np.int)
-    Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))
-    blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly_vs0-ve5000.npy".format(extstr, nHIwav))
-    zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))
+    wmin = HIwav[nHIwav]*(1.0+zem)
+    wdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_wave.npy".format(extstr))
+    wuse = np.where(wdata_all > wmin)[0]
+    fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr))[:5000, wuse]
+    IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly_vs0-ve5000.npy".format(extstr, nHIwav)).astype(np.int)[:, wuse, :]
+    Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
+    blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
+    zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
     ntrain = int(ftrain*fdata_all.shape[0])
-    speccut = epochs*((fdata_all.shape[1]-spec_len)//epochs)
+    speccut = epochs*((fdata_all.shape[1]-spec_len[0])//epochs)
     trainX = fdata_all[:ntrain, -speccut:]
     trainy = IDlabel_all[:ntrain, -speccut:, 0]
     trainN = Nlabel_all[:ntrain, -speccut:, 0]
@@ -79,63 +87,8 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0, epochs
     print(trainX.shape[1], trainX.shape[1]//epochs, trainX.shape[1]%epochs)
     return trainX, trainy, trainN, trainz, trainb, testX, testy, testN, testz, testb
 
-class DataGenerator(keras.utils.Sequence):
-    """Generates data for Keras see example from:
-    https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
-    """
-    def __init__(self, list_IDs, labels, batch_size=32, dim=(32,32,32), n_channels=1,
-                 n_classes=10, shuffle=True):
-        'Initialization'
-        self.dim = dim
-        self.batch_size = batch_size
-        self.labels = labels
-        self.list_IDs = list_IDs
-        self.n_channels = n_channels
-        self.n_classes = n_classes
-        self.shuffle = shuffle
-        self.on_epoch_end()
 
-    def __len__(self):
-        'Denotes the number of batches per epoch'
-        return int(np.floor(len(self.list_IDs) / self.batch_size))
-
-    def __getitem__(self, index):
-        'Generate one batch of data'
-        # Generate indexes of the batch
-        indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
-
-        # Find list of IDs
-        list_IDs_temp = [self.list_IDs[k] for k in indexes]
-
-        # Generate data
-        X, y = self.__data_generation(list_IDs_temp)
-
-        return X, y
-
-    def on_epoch_end(self):
-        'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.list_IDs))
-        if self.shuffle == True:
-            np.random.shuffle(self.indexes)
-
-    def __data_generation(self, list_IDs_temp):
-        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
-        # Initialization
-        X = np.empty((self.batch_size, *self.dim, self.n_channels))
-        y = np.empty((self.batch_size), dtype=int)
-
-        # Generate data
-        for i, ID in enumerate(list_IDs_temp):
-            # Store sample
-            X[i,] = np.load('data/' + ID + '.npy')
-
-            # Store class
-            y[i] = self.labels[ID]
-
-        return X, keras.utils.to_categorical(y, num_classes=self.n_classes)
-
-
-def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
+def generate_data_test(data, IDlabels, Nlabels, zlabels, blabels):
     shuff = np.arange(data.shape[1]-spec_len, dtype=np.int)
     np.random.shuffle(shuff)
     cntr_spec = 0
@@ -159,12 +112,75 @@ def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
         N_batch = Nlabels[:, midid]
         z_batch = zlabels[:, midid]
         b_batch = blabels[:, midid]
+        pdb.set_trace()
+        outdict = {'ID_output': ID_batch, 'N_output': N_batch, 'z_output': z_batch, 'b_output': b_batch}
+        cntr_spec += 1
+        #yield (indict, outdict)
+
+
+
+def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
+    shuff = np.arange(data.shape[1]-spec_len[0], dtype=np.int)
+    np.random.shuffle(shuff)
+    cntr_spec = 0
+    IDarr = np.arange(IDlabels.shape[0], dtype=np.int)
+    while True:
+        indict = ({})
+        for ll in range(nHIwav):
+            X_batch = np.ones((data.shape[0], spec_len[0], nHIwav))
+            for nn in range(nHIwav):
+                nshft = int(np.round(np.log(HIwav[nn]/HIwav[ll])/scalefact))
+                lmin = shuff[cntr_spec]+nshft
+                lmax = lmin + spec_len[0]
+                if lmin < 0 or lmax >= data.shape[1]:
+                    # Gone off the edge of the spectrum
+                    continue
+                X_batch[:, :, nn] = data[:, lmin:lmax]
+            indict['Ly{0:d}'.format(ll + 1)] = X_batch.copy()
+        midid = shuff[cntr_spec]+(spec_len[0]-1)//2
+        ID_batch = np.zeros((IDlabels.shape[0], 1 + nHIwav))
+        ID_batch[(IDarr, IDlabels[:, midid],)] = 1
+        N_batch = Nlabels[:, midid]
+        z_batch = zlabels[:, midid]
+        b_batch = blabels[:, midid]
         outdict = {'ID_output': ID_batch, 'N_output': N_batch, 'z_output': z_batch, 'b_output': b_batch}
         cntr_spec += 1
         yield (indict, outdict)
 
         # restart counter to yield data in the next epoch as well
-        if cntr_spec >= data.shape[1]-spec_len:
+        if cntr_spec >= data.shape[1]-spec_len[0]:
+            cntr_spec = 0
+
+
+def generate_data_multilen(data, IDlabels, Nlabels, zlabels, blabels):
+    shuff = np.arange(data.shape[1]-spec_len[0], dtype=np.int)
+    np.random.shuffle(shuff)
+    cntr_spec = 0
+    IDarr = np.arange(IDlabels.shape[0], dtype=np.int)
+    while True:
+        indict = ({})
+        midid = shuff[cntr_spec] + (spec_len[0] - 1) // 2
+        for ll in range(len(spec_len)):
+            X_batch = np.ones((data.shape[0], spec_len[ll], 1))
+            diff = (spec_len[ll] - 1) // 2
+            lmin = midid - diff
+            lmax = lmin + spec_len[ll]
+            if lmin < 0 or lmax >= data.shape[1]:
+                # Gone off the edge of the spectrum
+                continue
+            X_batch[:, :, 0] = data[:, lmin:lmax]
+            indict['Lya_{0:d}'.format(ll + 1)] = X_batch.copy()
+        ID_batch = np.zeros((IDlabels.shape[0], 1 + nHIwav))
+        ID_batch[(IDarr, IDlabels[:, midid],)] = 1
+        N_batch = Nlabels[:, midid]
+        z_batch = zlabels[:, midid]
+        b_batch = blabels[:, midid]
+        outdict = {'ID_output': ID_batch, 'N_output': N_batch, 'z_output': z_batch, 'b_output': b_batch}
+        cntr_spec += 1
+        yield (indict, outdict)
+
+        # restart counter to yield data in the next epoch as well
+        if cntr_spec >= data.shape[1]-spec_len[0]:
             cntr_spec = 0
 
 
@@ -172,27 +188,34 @@ def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
 def evaluate_model(trainX, trainy, trainN, trainz, trainb,
                    testX, testy, testN, testz, testb,
                    epochs=10, verbose=1):
+#    generate_data_test(testX, testy, testN, testz, testb)
+#    assert(False)
     filepath = os.path.dirname(os.path.abspath(__file__))
-    model_name = "/fit_data/model_nLy{0:d}_speclen{1:d}".format(nHIwav, spec_len)
+    model_name = "/fit_data/model_nLy{0:d}_speclen{1:d}multi4".format(nHIwav, spec_len[0])
     inputs = []
     concat_arr = []
-    for ll in range(nHIwav):
-        inputs.append(Input(shape=(spec_len, nHIwav), name='Ly{0:d}'.format(ll+1)))
-        conv11 = Conv1D(filters=64, kernel_size=3, activation='relu')(inputs[-1])
-        conv12 = Conv1D(filters=64, kernel_size=3, activation='relu')(conv11)
-        pool1  = MaxPooling1D(pool_size=2)(conv12)
-        conv21 = Conv1D(filters=128, kernel_size=3, activation='relu')(pool1)
-        conv22 = Conv1D(filters=128, kernel_size=3, activation='relu')(conv21)
-        pool2  = MaxPooling1D(pool_size=2)(conv22)
-        conv31 = Conv1D(filters=256, kernel_size=3, activation='relu')(pool2)
-        conv32 = Conv1D(filters=256, kernel_size=3, activation='relu')(conv31)
-        pool3  = MaxPooling1D(pool_size=2)(conv32)
-        conv41 = Conv1D(filters=512, kernel_size=3, activation='relu')(pool3)
-        conv42 = Conv1D(filters=512, kernel_size=3, activation='relu')(conv41)
-        pool4  = MaxPooling1D(pool_size=2)(conv42)
-        concat_arr.append(Flatten()(pool4))
-    # merge input models
-    merge = concatenate(concat_arr)
+    kernsz = [15, 9, 5, 3]
+    for ll in range(len(spec_len)):
+        inputs.append(Input(shape=(spec_len[ll],1), name='Lya_{0:d}'.format(ll+1)))
+        conv11 = Conv1D(filters=64, kernel_size=kernsz[ll], activation='relu')(inputs[-1])
+#        conv12 = Conv1D(filters=64, kernel_size=16, activation='relu')(conv11)
+#        pool1  = MaxPooling1D(pool_size=2)(conv11)
+        conv21 = Conv1D(filters=128, kernel_size=kernsz[ll], activation='relu')(conv11)
+#        conv22 = Conv1D(filters=128, kernel_size=16, activation='relu')(conv21)
+#        pool2  = MaxPooling1D(pool_size=2)(conv21)
+        conv31 = Conv1D(filters=256, kernel_size=kernsz[ll], activation='relu')(conv21)
+#        conv32 = Conv1D(filters=256, kernel_size=3, activation='relu')(conv31)
+#        pool3  = MaxPooling1D(pool_size=2)(conv31)
+#        conv41 = Conv1D(filters=512, kernel_size=3, activation='relu')(pool3)
+#        conv42 = Conv1D(filters=512, kernel_size=3, activation='relu')(conv41)
+#        pool4  = MaxPooling1D(pool_size=2)(conv42)
+        concat_arr.append(Flatten()(conv31))
+        #concat_arr.append(pool3)
+    if nHIwav == 1 and len(spec_len)==1:
+        merge = concat_arr[0]
+    else:
+        # merge input models
+        merge = concatenate(concat_arr)
     # interpretation model
     #hidden2 = Dense(100, activation='relu')(hidden1)
     fullcon1 = Dense(4096, activation='relu')(merge)
@@ -222,17 +245,17 @@ def evaluate_model(trainX, trainy, trainN, trainz, trainb,
     csv_logger = CSVLogger(csv_name, append=True)
     # Fit network
     model.fit_generator(
-        generate_data(trainX, trainy, trainN, trainz, trainb),
-        steps_per_epoch=(trainX.shape[1] - spec_len)//epochs,
+        generate_data_multilen(trainX, trainy, trainN, trainz, trainb),
+        steps_per_epoch=(trainX.shape[1] - spec_len[0])//epochs,
         epochs=epochs, verbose=verbose,
         callbacks=[checkpointer, csv_logger],
         validation_data=generate_data(testX, testy, testN, testz, testb),
-        validation_steps=(testX.shape[1] - spec_len)//epochs)
+        validation_steps=(testX.shape[1] - spec_len[0])//epochs)
 
     # Evaluate model
 #    _, accuracy
-    accuracy = model.evaluate_generator(generate_data(testX, testy, testN, testz, testb),
-                                        steps=(testX.shape[1] - spec_len)//epochs,
+    accuracy = model.evaluate_generator(generate_data_multilen(testX, testy, testN, testz, testb),
+                                        steps=(testX.shape[1] - spec_len[0])//epochs,
                                         verbose=0)
     #pdb.set_trace()
     return accuracy, model.metrics_names
@@ -253,7 +276,7 @@ def summarize_results(scores):
     keys = scores.keys()
     for ii in keys:
         m, s = mean(scores[ii]), std(scores[ii])
-        print('Accuracy: %.3f%% (+/-%.3f)' % (m, s))
+        print('Accuracy: {0:.3f} percent (+/-{1:.3f})'.format(m, s))
 
 
 # Detect features in a dataset
