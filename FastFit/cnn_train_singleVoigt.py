@@ -1,5 +1,6 @@
 import os
 import pdb
+import time
 import numpy as np
 from pyigm.fN.fnmodel import FNModel
 from pyigm.fN.mockforest import monte_HIcomp
@@ -208,9 +209,8 @@ def evaluate_model(trainX, trainN, trainb,
     # Evaluate model
 #    _, accuracy
     accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testb),
-                                        steps=testX.shape[0],
-                                        verbose=0)
-    #pdb.set_trace()
+                                           steps=testX.shape[0],
+                                           verbose=0)
     return accuracy, gpumodel.metrics_names
 
 # Gold standard in cross-validation
@@ -246,8 +246,8 @@ def localise_features(repeats=3, epochs=10):
             for name in names:
                 allscores[name] = []
         for ii, name in enumerate(names):
+            allscores[name].append(scores[ii] * 100.0)
             if '_acc' in name:
-                allscores[name].append(scores[ii] * 100.0)
                 print('%s >#%d: %.3f' % (name, r + 1, allscores[name][-1]))
             else:
                 print('%s >#%d: %.3f' % (name, r + 1, scores[ii]))
@@ -262,4 +262,7 @@ if False:
     generate_dataset(epochs=epochs)
 else:
     # Once the data exist, run the experiment
-    localise_features(epochs=10)
+    atime = time.time()
+    localise_features(repeats=1, epochs=10)
+    btime = time.time()
+    print((btime-atime)/60.0)
