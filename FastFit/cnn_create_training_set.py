@@ -445,7 +445,7 @@ if __name__ == "__main__":
     # 1 = Create small images of the Lyman series
     # 2 = Create a series of synthetic quasar spectra with H I Lyman forest lines
     # 3 = Collect synthetic quasar spectra into a single file
-    execute_task = 3
+    execute_task = 2
     multip = True  # Multiprocess?
     starttime = time.time()
 

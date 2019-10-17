@@ -60,11 +60,6 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0, epochs
     wmin = HIwav[nHIwav]*(1.0+zem)
     wdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_wave.npy".format(extstr))
     wuse = np.where(wdata_all > wmin)[0]
-    # fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr, nHIwav))
-    # IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly.npy".format(extstr, nHIwav)).astype(np.int)
-    # Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly.npy".format(extstr, nHIwav))
-    # blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly.npy".format(extstr, nHIwav))
-    # zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly.npy".format(extstr, nHIwav))
     fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr))[:5000, wuse]
     IDlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_IDlabelonly_vs0-ve5000.npy".format(extstr, nHIwav)).astype(np.int)[:, wuse, :]
     Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
@@ -121,6 +116,7 @@ def generate_data_test(data, IDlabels, Nlabels, zlabels, blabels):
         outdict = {'ID_output': ID_batch, 'N_output': N_batch, 'z_output': z_batch, 'b_output': b_batch}
         cntr_spec += 1
         #yield (indict, outdict)
+
 
 
 def generate_data(data, IDlabels, Nlabels, zlabels, blabels):
@@ -280,7 +276,7 @@ def summarize_results(scores):
     keys = scores.keys()
     for ii in keys:
         m, s = mean(scores[ii]), std(scores[ii])
-        print('Accuracy: %.3f%% (+/-%.3f)' % (m, s))
+        print('Accuracy: {0:.3f} percent (+/-{1:.3f})'.format(m, s))
 
 
 # Detect features in a dataset
