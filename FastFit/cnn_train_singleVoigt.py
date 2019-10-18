@@ -12,7 +12,7 @@ import tensorflow as tf
 import keras.backend as K
 from keras.utils import plot_model, multi_gpu_model
 from keras.callbacks import ModelCheckpoint, CSVLogger
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.layers import Input
 from keras.layers import Dense
 from keras.layers import Flatten
@@ -26,12 +26,14 @@ velstep = 2.5    # Pixel size in km/s
 spec_len = 256
 spec_ext = 64
 
+
 # Define custom loss
 def mse_mask():
     # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
     def loss(y_true, y_pred):
-        mask = tf.cast(tf.not_equal(y_true, 0.0), tf.float32)
-        return K.mean(mask * K.square(y_pred - y_true), axis=-1)
+        #mask = tf.cast(tf.greater(y_true, -900.0), tf.float32)
+        #return K.mean(mask * K.square(y_pred - y_true), axis=-1)
+        return K.mean(K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
 
@@ -87,7 +89,6 @@ def generate_dataset(zem=3.0, snr=0, seed=1234, ftrain=0.9, nsubpix=10, numspec=
     for ss in range(numspec):
         fN_model = FNModel('Hspline', pivots=NHIp, param=params, zmnx=(2., 5.))
         HI_comps = monte_HIcomp((zmin, zem), fN_model, NHI_mnx=(12., 18.), rstate=rstate)
-
         # Extract/store information
         NHI = np.append(NHI, HI_comps['lgNHI'].data)
         zabs = np.append(zabs, HI_comps['z'].data)
@@ -113,7 +114,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.9, epochs=10):
     return trainX, trainN, trainb, testX, testN, testb
 
 
-def yield_data(data, Nlabels, blabels):
+def yield_data(data, Nlabels, blabels, maskval=-999.0):
     cntr_batch, batch_sz = 0, 10000
     cenpix = (spec_len+spec_ext)//2
     ll = np.arange(batch_sz).repeat(spec_len)
@@ -124,9 +125,20 @@ def yield_data(data, Nlabels, blabels):
         X_batch = data[ll+cntr_batch, pp.flatten()].reshape((batch_sz, spec_len))
         indict['kern_1'] = X_batch.copy().reshape((batch_sz, spec_len, 1))
         z_batch = spec_len//2 - cenpix + pertrb.copy()
-        outdict = {'N_output': Nlabels[cntr_batch:cntr_batch+batch_sz],
-                   'z_output': z_batch,
-                   'b_output': blabels[cntr_batch:cntr_batch+batch_sz]}
+        # Extract the relevant bits of information
+        yld_N = Nlabels[cntr_batch:cntr_batch+batch_sz]
+        yld_z = z_batch
+        yld_b = blabels[cntr_batch:cntr_batch+batch_sz]
+        # Mask
+        if False:
+            wmsk = np.where(X_batch[:, spec_len//2] > 0.95)
+            yld_N[wmsk] = maskval
+            yld_z[wmsk] = maskval
+            yld_b[wmsk] = maskval
+        # Store output
+        outdict = {'N_output': yld_N,
+                   'z_output': yld_z,
+                   'b_output': yld_b}
 
 #        pdb.set_trace()
         yield (indict, outdict)
@@ -188,12 +200,13 @@ def evaluate_model(trainX, trainN, trainb,
     pngname = filepath + model_name + '.png'
     plot_model(gpumodel, to_file=pngname)
     # Compile
-    loss = {'N_output': mse_mask(),
-            'z_output': mse_mask(),
-            'b_output': mse_mask()}
+    loss = {'N_loss': mse_mask(),
+            'z_loss': mse_mask(),
+            'b_loss': mse_mask()}
     gpumodel.compile(loss=loss, optimizer='adam', metrics=['mean_squared_error'])
     # Initialise callbacks
     ckp_name = filepath + model_name + '.hdf5'
+    sav_name = filepath + model_name + '_save.hdf5'
     csv_name = filepath + model_name + '.log'
     checkpointer = ModelCheckpoint(filepath=ckp_name, verbose=1, save_best_only=True)
     csv_logger = CSVLogger(csv_name, append=True)
@@ -206,12 +219,47 @@ def evaluate_model(trainX, trainN, trainb,
         validation_data=yield_data(testX, testN, testb),
         validation_steps=200)
 
+    gpumodel.save(sav_name)
+
     # Evaluate model
 #    _, accuracy
     accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testb),
                                            steps=testX.shape[0],
                                            verbose=0)
     return accuracy, gpumodel.metrics_names
+
+
+def restart_model(model_name, trainX, trainN, trainb,
+                   testX, testN, testb,
+                   epochs=10, verbose=1):
+    filepath = os.path.dirname(os.path.abspath(__file__))+'/'
+    # Load model
+    loadname = filepath + 'fit_data/' + model_name + '.hdf5'
+    gpumodel = load_model(loadname, custom_objects={'N_loss': mse_mask(), 'z_loss': mse_mask(), 'b_loss': mse_mask()})
+    # Initialise callbacks
+    ckp_name = filepath + model_name + '_chkp_restart.hdf5'
+    sav_name = filepath + model_name + '_save_restart.hdf5'
+    csv_name = filepath + model_name + '_restart.log'
+    checkpointer = ModelCheckpoint(filepath=ckp_name, verbose=1, save_best_only=True)
+    csv_logger = CSVLogger(csv_name, append=True)
+    # Fit network
+    gpumodel.fit_generator(
+        yield_data(trainX, trainN, trainb),
+        steps_per_epoch=2000,  # Total number of batches (i.e. num data/batch size)
+        epochs=epochs, verbose=verbose,
+        callbacks=[checkpointer, csv_logger],
+        validation_data=yield_data(testX, testN, testb),
+        validation_steps=200)
+
+    gpumodel.save(sav_name)
+
+    # Evaluate model
+    #    _, accuracy
+    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testb),
+                                           steps=testX.shape[0],
+                                           verbose=0)
+    return accuracy, gpumodel.metrics_names
+
 
 # Gold standard in cross-validation
 # from sklearn.model_selection import StratifiedKFold
@@ -233,15 +281,20 @@ def summarize_results(scores):
 
 
 # Detect features in a dataset
-def localise_features(repeats=3, epochs=10):
+def localise_features(repeats=3, epochs=10, restart=False):
     # load data
     trainX, trainN, trainb,\
     testX, testN, testb = load_dataset(epochs=epochs)
     # repeat experiment
     allscores = dict({})
     for r in range(repeats):
-        scores, names = evaluate_model(trainX, trainN, trainb,
-                                       testX, testN, testb, epochs=epochs)
+        if restart:
+            model_name = 'svoigt_speclen256_save'
+            scores, names = restart_model(model_name, trainX, trainN, trainb,
+                                          testX, testN, testb)
+        else:
+            scores, names = evaluate_model(trainX, trainN, trainb,
+                                           testX, testN, testb, epochs=epochs)
         if r == 0:
             for name in names:
                 allscores[name] = []
@@ -263,6 +316,6 @@ if False:
 else:
     # Once the data exist, run the experiment
     atime = time.time()
-    localise_features(repeats=1, epochs=10)
+    localise_features(repeats=1, epochs=10, restart=False)
     btime = time.time()
     print((btime-atime)/60.0)
