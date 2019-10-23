@@ -1,6 +1,7 @@
 import os
 import pdb
 import time
+import json
 import numpy as np
 from pyigm.fN.fnmodel import FNModel
 from pyigm.fN.mockforest import monte_HIcomp
@@ -36,6 +37,53 @@ def mse_mask():
         #return K.mean(K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
+
+
+def hyperparam(mnum):
+    """Generate a random set of hyper parameters
+
+    mnum (int): Model index number
+    """
+    # Define all of the allowed parameter space
+    allowed_hpars = dict(learning_rate       = [0.00002, 0.0005, 0.0007, 0.0010, 0.0030, 0.0050, 0.0070],
+                         batch_size          = [],
+                         l2_regpen           = [0.005, 0.01, 0.008, 0.005, 0.003],
+                         dropout_keep_prob   = [0.75, 0.9, 0.95, 0.98, 1],
+                         num_epochs          = [3, 5, 7, 9],
+                         # Number of filters in each convolutional layer
+                         conv_layer_filter_1 = [64, 80, 90, 100, 110, 120, 140, 160, 200],
+                         conv_layer_filter_2 = [80, 96, 128, 192, 256],
+                         conv_layer_filter_3 = [80, 96, 128, 192, 256],
+                         # Kernal size
+                         conv_layer_kernal_1 = [20, 22, 24, 26, 28, 32, 40, 48, 54],
+                         conv_layer_kernal_2 = [10, 14, 16, 20, 24, 28, 32, 34],
+                         conv_layer_kernal_3 = [10, 14, 16, 20, 24, 28, 32, 34],
+                         # Stride of each kernal
+                         conv_layer_stride_1 = [1, 2, 4, 6],
+                         conv_layer_stride_2 = [1, 2, 4, 6],
+                         conv_layer_stride_3 = [1, 2, 4, 6],
+                         # Pooling kernal size
+                         pool_layer_kernal_1 = [2, 3, 4, 6, 8],
+                         pool_layer_kernal_2 = [2, 3, 4, 6, 8],
+                         pool_layer_kernal_3 = [2, 4, 4, 6, 8],
+                         # Pooling stride
+                         pool_layer_stride_1 = [1, 2, 4, 5, 6],
+                         pool_layer_stride_2 = [1, 2, 3, 4, 5, 6, 7, 8],
+                         pool_layer_stride_3 = [1, 2, 3, 4, 5, 6, 7, 8],
+                         # Fully connected layers
+                         fc1_neurons         = [256, 512, 1024, 2048, 4096],
+                         fc2_N_neurons=[32, 64, 128, 256],
+                         fc2_z_neurons=[32, 64, 128, 256],
+                         fc2_b_neurons=[32, 64, 128, 256],
+                         )
+    # Generate dictionary of values
+    hyperpar = dict({})
+    for key in allowed_hpars.keys():
+        hyperpar[key] = np.random.choice(allowed_hpars[key])
+    # Save these parameters and return the hyperpar
+    with open('fit_data/simple/model_{0:03d}.json'.format(mnum), 'w') as fp:
+        json.dump(hyperpar, fp, sort_keys=True, indent=4)
+    return hyperpar
 
 
 def voigt(wave, params):
@@ -123,7 +171,7 @@ def yield_data(data, Nlabels, blabels, maskval=0.0):
         pertrb = np.random.randint(0, spec_ext, batch_sz)
         pp = pertrb.reshape((batch_sz, 1)).repeat(spec_len, axis=1) + np.arange(spec_len)
         X_batch = data[ll+cntr_batch, pp.flatten()].reshape((batch_sz, spec_len))
-        indict['kern_1'] = X_batch.copy().reshape((batch_sz, spec_len, 1))
+        indict['input_1'] = X_batch.copy().reshape((batch_sz, spec_len, 1))
         z_batch = spec_len//2 - cenpix + pertrb.copy()
         # Extract the relevant bits of information
         yld_N = Nlabels[cntr_batch:cntr_batch+batch_sz]
@@ -136,9 +184,9 @@ def yield_data(data, Nlabels, blabels, maskval=0.0):
             yld_z[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
             yld_b[wmsk] = maskval
         # Store output
-        outdict = {'N_output': yld_N,
-                   'z_output': yld_z,
-                   'b_output': yld_b}
+        outdict = {'output_N': yld_N,
+                   'output_z': yld_z,
+                   'output_b': yld_b}
 
 #        pdb.set_trace()
         yield (indict, outdict)
@@ -148,9 +196,57 @@ def yield_data(data, Nlabels, blabels, maskval=0.0):
             cntr_batch = 0
 
 
+def build_model_simple(hyperpar):
+    # Extract parameters
+    learning_rate = hyperpar['learning_rate']
+    batch_size = hyperpar['batch_size']
+    l2_regpen = hyperpar['l2_regpen']
+    fc1_neurons = hyperpar['fc1_neurons']
+    fc2_N_neurons = hyperpar['fc2_N_neurons']
+    fc2_b_neurons = hyperpar['fc2_b_neurons']
+    fc2_z_neurons = hyperpar['fc2_z_neurons']
+    conv1_kernel = hyperpar['conv1_kernel']
+    conv2_kernel = hyperpar['conv2_kernel']
+    conv3_kernel = hyperpar['conv3_kernel']
+    conv1_filter = hyperpar['conv1_filter']
+    conv2_filter = hyperpar['conv2_filter']
+    conv3_filter = hyperpar['conv3_filter']
+    conv1_stride = hyperpar['conv1_stride']
+    conv2_stride = hyperpar['conv2_stride']
+    conv3_stride = hyperpar['conv3_stride']
+    pool1_kernel = hyperpar['pool1_kernel']
+    pool2_kernel = hyperpar['pool2_kernel']
+    pool3_kernel = hyperpar['pool3_kernel']
+    pool1_stride = hyperpar['pool1_stride']
+    pool2_stride = hyperpar['pool2_stride']
+    pool3_stride = hyperpar['pool3_stride']
+
+    # Build model
+    inputs = []
+    # Shape is (batches, steps, channels)
+    # For example, a 3-color 1D image of side 100 pixels, dealt in batches of 32 would have a shape=(32,100,3)
+    inputs.append(Input(shape=(spec_len, 1), name='input_1'))
+    conv1 = Conv1D(filters=conv1_filter, kernel_size=conv1_kernel, strides=conv1_stride, activation='relu')(inputs[-1])
+    pool1 = MaxPooling1D(pool_size=pool1_kernel, strides=pool1_stride)(conv1)
+    conv2 = Conv1D(filters=conv2_filter, kernel_size=conv2_kernel, strides=conv2_stride, activation='relu')(pool1)
+    pool2 = MaxPooling1D(pool_size=pool2_kernel, strides=pool2_stride)(conv2)
+    conv3 = Conv1D(filters=conv3_filter, kernel_size=conv3_kernel, strides=conv3_stride, activation='relu')(pool2)
+    pool3 = MaxPooling1D(pool_size=pool3_kernel, strides=pool3_stride)(conv3)
+    # Interpretation model
+    fullcon1 = Dense(fc1_neurons, activation='relu')(pool3)
+    fullcon2_N = Dense(fc2_N_neurons, activation='relu')(fullcon1)
+    fullcon2_z = Dense(fc2_z_neurons, activation='relu')(fullcon1)
+    fullcon2_b = Dense(fc2_b_neurons, activation='relu')(fullcon1)
+    output_N = Dense(1, activation='linear', name='output_N')(fullcon2_N)
+    output_z = Dense(1, activation='linear', name='output_z')(fullcon2_z)
+    output_b = Dense(1, activation='linear', name='output_b')(fullcon2_b)
+    model = Model(inputs=inputs, outputs=[output_N, output_z, output_b])
+    return model
+
+
 # fit and evaluate a model
 def evaluate_model(trainX, trainN, trainb,
-                   testX, testN, testb,
+                   testX, testN, testb, hyperpar,
                    epochs=10, verbose=1):
     #yield_data(trainX, trainN, trainb)
     #assert(False)
@@ -160,36 +256,7 @@ def evaluate_model(trainX, trainN, trainb,
     concat_arr = []
     kernsz = [32]
     # Construct network
-    for kk in range(len(kernsz)):
-        # Shape is (batches, steps, channels)
-        # For example, a 3-color 1D image of side 100 pixels, dealt in batches of 32 would have a shape=(32,100,3)
-        print(spec_len)
-        inputs.append(Input(shape=(spec_len, 1), name='kern_{0:d}'.format(kk+1)))
-        conv11 = Conv1D(filters=128, kernel_size=kernsz[kk], activation='relu')(inputs[-1])
-        #conv12 = Conv1D(filters=64, kernel_size=kernsz[kk], activation='relu')(conv11)
-        pool1  = MaxPooling1D(pool_size=2)(conv11)
-        conv21 = Conv1D(filters=128, kernel_size=kernsz[kk], activation='relu')(pool1)
-        #conv22 = Conv1D(filters=128, kernel_size=16, activation='relu')(conv21)
-        pool2  = MaxPooling1D(pool_size=2)(conv21)
-        conv31 = Conv1D(filters=128, kernel_size=kernsz[kk], activation='relu')(pool2)
-        #conv32 = Conv1D(filters=256, kernel_size=3, activation='relu')(conv31)
-        pool3  = MaxPooling1D(pool_size=2)(conv31)
-#        conv41 = Conv1D(filters=512, kernel_size=3, activation='relu')(pool3)
-        #conv42 = Conv1D(filters=512, kernel_size=3, activation='relu')(conv41)
-#        pool4  = MaxPooling1D(pool_size=2)(conv41)
-        concat_arr.append(Flatten()(pool3))
-    if len(kernsz) == 1:
-        merge = concat_arr[0]
-    else:
-        # merge input models
-        merge = concatenate(concat_arr)
-    # Interpretation model
-    fullcon1 = Dense(4096, activation='relu')(merge)
-#    fullcon2 = Dense(4096, activation='relu')(fullcon1)
-    N_output = Dense(1, activation='linear', name='N_output')(fullcon1)
-    z_output = Dense(1, activation='linear', name='z_output')(fullcon1)
-    b_output = Dense(1, activation='linear', name='b_output')(fullcon1)
-    model = Model(inputs=inputs, outputs=[N_output, z_output, b_output])
+    model = build_model_simple(hyperpar)
     # Make this work on multiple GPUs
     gpumodel = multi_gpu_model(model, gpus=4)
     # Summarize layers
