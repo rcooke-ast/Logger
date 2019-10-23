@@ -31,9 +31,9 @@ spec_ext = 64
 def mse_mask():
     # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
     def loss(y_true, y_pred):
-        #mask = tf.cast(tf.greater(y_true, -900.0), tf.float32)
-        #return K.mean(mask * K.square(y_pred - y_true), axis=-1)
-        return K.mean(K.square(y_pred - y_true), axis=-1)
+        epsilon = K.ones_like(y_true[0,:])*0.00001
+        return K.mean( (y_true/(y_true+epsilon)) * K.square(y_pred - y_true), axis=-1)
+        #return K.mean(K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
 
@@ -114,7 +114,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=0.9, epochs=10):
     return trainX, trainN, trainb, testX, testN, testb
 
 
-def yield_data(data, Nlabels, blabels, maskval=-999.0):
+def yield_data(data, Nlabels, blabels, maskval=0.0):
     cntr_batch, batch_sz = 0, 10000
     cenpix = (spec_len+spec_ext)//2
     ll = np.arange(batch_sz).repeat(spec_len)
@@ -130,10 +130,10 @@ def yield_data(data, Nlabels, blabels, maskval=-999.0):
         yld_z = z_batch
         yld_b = blabels[cntr_batch:cntr_batch+batch_sz]
         # Mask
-        if False:
+        if True:
             wmsk = np.where(X_batch[:, spec_len//2] > 0.95)
             yld_N[wmsk] = maskval
-            yld_z[wmsk] = maskval
+            yld_z[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
             yld_b[wmsk] = maskval
         # Store output
         outdict = {'N_output': yld_N,
@@ -155,7 +155,7 @@ def evaluate_model(trainX, trainN, trainb,
     #yield_data(trainX, trainN, trainb)
     #assert(False)
     filepath = os.path.dirname(os.path.abspath(__file__))
-    model_name = "/fit_data/svoigt_speclen{0:d}".format(spec_len)
+    model_name = "/fit_data/svoigt_speclen{0:d}_masked".format(spec_len)
     inputs = []
     concat_arr = []
     kernsz = [32]
@@ -200,9 +200,15 @@ def evaluate_model(trainX, trainN, trainb,
     pngname = filepath + model_name + '.png'
     plot_model(gpumodel, to_file=pngname)
     # Compile
-    loss = {'N_loss': mse_mask(),
-            'z_loss': mse_mask(),
-            'b_loss': mse_mask()}
+    masking = True
+    if masking:
+        loss = {'N_output': mse_mask(),
+                'z_output': mse_mask(),
+                'b_output': mse_mask()}
+    else:
+        loss = {'N_output': 'mse',
+                'z_output': 'mse',
+                'b_output': 'mse'}
     gpumodel.compile(loss=loss, optimizer='adam', metrics=['mean_squared_error'])
     # Initialise callbacks
     ckp_name = filepath + model_name + '.hdf5'
@@ -231,11 +237,23 @@ def evaluate_model(trainX, trainN, trainb,
 
 def restart_model(model_name, trainX, trainN, trainb,
                    testX, testN, testb,
-                   epochs=10, verbose=1):
+                   epochs=10, verbose=1, masking=True):
     filepath = os.path.dirname(os.path.abspath(__file__))+'/'
     # Load model
     loadname = filepath + 'fit_data/' + model_name + '.hdf5'
-    gpumodel = load_model(loadname, custom_objects={'N_loss': mse_mask(), 'z_loss': mse_mask(), 'b_loss': mse_mask()})
+    model = load_model(loadname, compile=False)
+    # Make this work on multiple GPUs
+    gpumodel = multi_gpu_model(model, gpus=4)
+    # Compile model
+    if masking:
+        loss = {'N_output': mse_mask(),
+                'z_output': mse_mask(),
+                'b_output': mse_mask()}
+    else:
+        loss = {'N_output': 'mse',
+                'z_output': 'mse',
+                'b_output': 'mse'}
+    gpumodel.compile(loss=loss, optimizer='adam', metrics=['mean_squared_error'])
     # Initialise callbacks
     ckp_name = filepath + model_name + '_chkp_restart.hdf5'
     sav_name = filepath + model_name + '_save_restart.hdf5'
@@ -289,7 +307,7 @@ def localise_features(repeats=3, epochs=10, restart=False):
     allscores = dict({})
     for r in range(repeats):
         if restart:
-            model_name = 'svoigt_speclen256_save'
+            model_name = 'svoigt_speclen256_masked_save'
             scores, names = restart_model(model_name, trainX, trainN, trainb,
                                           testX, testN, testb)
         else:
@@ -316,6 +334,6 @@ if False:
 else:
     # Once the data exist, run the experiment
     atime = time.time()
-    localise_features(repeats=1, epochs=10, restart=False)
+    localise_features(repeats=1, epochs=10, restart=True)
     btime = time.time()
     print((btime-atime)/60.0)
