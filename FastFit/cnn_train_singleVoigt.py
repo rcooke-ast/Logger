@@ -13,14 +13,14 @@ import tensorflow as tf
 import keras.backend as K
 from keras.utils import plot_model, multi_gpu_model
 from keras.callbacks import ModelCheckpoint, CSVLogger
+from keras.optimizers import Adam
 from keras.models import Model, load_model
 from keras.layers import Input
 from keras.layers import Dense
-from keras.layers import Flatten
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
-from keras.layers.merge import concatenate
-from keras.layers import Dropout, BatchNormalization
+from keras.layers import Dropout
+from keras import regularizers
 from contextlib import redirect_stdout
 
 velstep = 2.5    # Pixel size in km/s
@@ -45,11 +45,12 @@ def hyperparam(mnum):
     mnum (int): Model index number
     """
     # Define all of the allowed parameter space
-    allowed_hpars = dict(learning_rate       = [0.00002, 0.0005, 0.0007, 0.0010, 0.0030, 0.0050, 0.0070],
-                         batch_size          = [],
-                         l2_regpen           = [0.005, 0.01, 0.008, 0.005, 0.003],
-                         dropout_keep_prob   = [0.75, 0.9, 0.95, 0.98, 1],
-                         num_epochs          = [3, 5, 7, 9],
+    allowed_hpars = dict(learning_rate       = [0.0005, 0.0007, 0.0010, 0.0030, 0.0050, 0.0070, 0.0100],
+                         l2_regpen           = [0.003, 0.005, 0.008, 0.010],
+                         dropout_prob        = [0.0, 0.01, 0.02, 0.05, 0.10],
+                         num_epochs          = [10, 15, 20, 25, 30, 35],
+                         num_batch_train     = [512, 1024, 2048, 4096],
+                         num_batch_validate  = [64, 128, 256, 512],
                          # Number of filters in each convolutional layer
                          conv_layer_filter_1 = [64, 80, 90, 100, 110, 120, 140, 160, 200],
                          conv_layer_filter_2 = [80, 96, 128, 192, 256],
@@ -199,7 +200,6 @@ def yield_data(data, Nlabels, blabels, maskval=0.0):
 def build_model_simple(hyperpar):
     # Extract parameters
     learning_rate = hyperpar['learning_rate']
-    batch_size = hyperpar['batch_size']
     l2_regpen = hyperpar['l2_regpen']
     fc1_neurons = hyperpar['fc1_neurons']
     fc2_N_neurons = hyperpar['fc2_N_neurons']
@@ -222,25 +222,32 @@ def build_model_simple(hyperpar):
     pool3_stride = hyperpar['pool3_stride']
 
     # Build model
-    inputs = []
     # Shape is (batches, steps, channels)
     # For example, a 3-color 1D image of side 100 pixels, dealt in batches of 32 would have a shape=(32,100,3)
-    inputs.append(Input(shape=(spec_len, 1), name='input_1'))
-    conv1 = Conv1D(filters=conv1_filter, kernel_size=conv1_kernel, strides=conv1_stride, activation='relu')(inputs[-1])
+    input_1 = Input(shape=(spec_len, 1), name='input_1')
+    drop1 = Dropout(hyperpar['dropout_prob'])(input_1)
+    conv1 = Conv1D(filters=conv1_filter, kernel_size=conv1_kernel, strides=conv1_stride, activation='relu')(drop1)
     pool1 = MaxPooling1D(pool_size=pool1_kernel, strides=pool1_stride)(conv1)
     conv2 = Conv1D(filters=conv2_filter, kernel_size=conv2_kernel, strides=conv2_stride, activation='relu')(pool1)
     pool2 = MaxPooling1D(pool_size=pool2_kernel, strides=pool2_stride)(conv2)
     conv3 = Conv1D(filters=conv3_filter, kernel_size=conv3_kernel, strides=conv3_stride, activation='relu')(pool2)
     pool3 = MaxPooling1D(pool_size=pool3_kernel, strides=pool3_stride)(conv3)
+
     # Interpretation model
-    fullcon1 = Dense(fc1_neurons, activation='relu')(pool3)
-    fullcon2_N = Dense(fc2_N_neurons, activation='relu')(fullcon1)
-    fullcon2_z = Dense(fc2_z_neurons, activation='relu')(fullcon1)
-    fullcon2_b = Dense(fc2_b_neurons, activation='relu')(fullcon1)
-    output_N = Dense(1, activation='linear', name='output_N')(fullcon2_N)
-    output_z = Dense(1, activation='linear', name='output_z')(fullcon2_z)
-    output_b = Dense(1, activation='linear', name='output_b')(fullcon2_b)
-    model = Model(inputs=inputs, outputs=[output_N, output_z, output_b])
+    regpen = hyperpar['l2_regpen']
+    fullcon1 = Dense(fc1_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(pool3)
+    drop1 = Dropout(hyperpar['dropout_prob'])(fullcon1)
+    # Second fully connected layer
+    fullcon2_N = Dense(fc2_N_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
+    drop2_N = Dropout(hyperpar['dropout_prob'])(fullcon2_N)
+    fullcon2_z = Dense(fc2_z_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
+    drop2_z = Dropout(hyperpar['dropout_prob'])(fullcon2_z)
+    fullcon2_b = Dense(fc2_b_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
+    drop2_b = Dropout(hyperpar['dropout_prob'])(fullcon2_b)
+    output_N = Dense(1, activation='linear', name='output_N')(drop2_N)
+    output_z = Dense(1, activation='linear', name='output_z')(drop2_z)
+    output_b = Dense(1, activation='linear', name='output_b')(drop2_b)
+    model = Model(inputs=[input_1], outputs=[output_N, output_z, output_b])
     return model
 
 
@@ -252,13 +259,10 @@ def evaluate_model(trainX, trainN, trainb,
     #assert(False)
     filepath = os.path.dirname(os.path.abspath(__file__))
     model_name = "/fit_data/svoigt_speclen{0:d}_masked".format(spec_len)
-    inputs = []
-    concat_arr = []
-    kernsz = [32]
     # Construct network
     model = build_model_simple(hyperpar)
     # Make this work on multiple GPUs
-    gpumodel = multi_gpu_model(model, gpus=4)
+    gpumodel = multi_gpu_model(model, gpus=1)
     # Summarize layers
     with open(filepath + model_name + '.summary', 'w') as f:
         with redirect_stdout(f):
@@ -276,7 +280,8 @@ def evaluate_model(trainX, trainN, trainb,
         loss = {'N_output': 'mse',
                 'z_output': 'mse',
                 'b_output': 'mse'}
-    gpumodel.compile(loss=loss, optimizer='adam', metrics=['mean_squared_error'])
+    optadam = Adam(lr=hyperpar['learning_rate'], decay=hyperpar['learning_rate']/hyperpar['num_epochs'])
+    gpumodel.compile(loss=loss, optimizer=optadam, metrics=['mean_squared_error'])
     # Initialise callbacks
     ckp_name = filepath + model_name + '.hdf5'
     sav_name = filepath + model_name + '_save.hdf5'
@@ -286,11 +291,11 @@ def evaluate_model(trainX, trainN, trainb,
     # Fit network
     gpumodel.fit_generator(
         yield_data(trainX, trainN, trainb),
-        steps_per_epoch=2000,  # Total number of batches (i.e. num data/batch size)
+        steps_per_epoch=hyperpar['num_batch_train'],  # Total number of batches (i.e. num data/batch size)
         epochs=epochs, verbose=verbose,
         callbacks=[checkpointer, csv_logger],
         validation_data=yield_data(testX, testN, testb),
-        validation_steps=200)
+        validation_steps=hyperpar['num_batch_validate'])
 
     gpumodel.save(sav_name)
 
@@ -401,6 +406,6 @@ if False:
 else:
     # Once the data exist, run the experiment
     atime = time.time()
-    localise_features(repeats=1, epochs=10, restart=True)
+    localise_features(repeats=1, epochs=10, restart=False)
     btime = time.time()
     print((btime-atime)/60.0)
