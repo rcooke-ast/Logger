@@ -125,7 +125,7 @@ def make_spectra(NHI, zabs, bval, nsubpix=10, szstr=None, numspec=1):
     return
 
 
-def generate_dataset(zem=3.0, snr=0, seed=1234, ftrain=0.9, nsubpix=10, numspec=1000, epochs=10):
+def generate_dataset(zem=3.0, snr=0, seed=1234, ftrain=0.9, nsubpix=10, numspec=1000):
     # Setup params
     rstate = np.random.RandomState(seed)
     zmin = 1026.0*(1+zem)/1215.6701 - 1
@@ -145,7 +145,7 @@ def generate_dataset(zem=3.0, snr=0, seed=1234, ftrain=0.9, nsubpix=10, numspec=
     make_spectra(NHI, zabs, bval, nsubpix=nsubpix, numspec=numspec)
 
 
-def load_dataset(zem=3.0, snr=0, ftrain=0.9, epochs=10):
+def load_dataset(zem=3.0, snr=0, ftrain=0.9):
     zstr = "zem{0:.2f}".format(zem)
     fdata = np.load("train_data/svoigt_prof_zem3_nsubpix10_numspec1000.npy").T
     Nlabel = np.load("train_data/svoigt_Nval_zem3_nsubpix10_numspec1000.npy")
@@ -371,10 +371,12 @@ def summarize_results(scores):
 
 
 # Detect features in a dataset
-def localise_features(repeats=3, epochs=10, restart=False):
+def localise_features(mnum, repeats=3, restart=False):
+    # Generate hyperparameters
+    hyperpar = hyperparam(mnum)
     # load data
     trainX, trainN, trainb,\
-    testX, testN, testb = load_dataset(epochs=epochs)
+    testX, testN, testb = load_dataset()
     # repeat experiment
     allscores = dict({})
     for r in range(repeats):
@@ -384,7 +386,7 @@ def localise_features(repeats=3, epochs=10, restart=False):
                                           testX, testN, testb)
         else:
             scores, names = evaluate_model(trainX, trainN, trainb,
-                                           testX, testN, testb, epochs=epochs)
+                                           testX, testN, testb, hyperpar, epochs=hyperpar['num_epochs'])
         if r == 0:
             for name in names:
                 allscores[name] = []
@@ -398,14 +400,11 @@ def localise_features(repeats=3, epochs=10, restart=False):
     summarize_results(allscores)
 
 # Set the number of epochs
-epochs = 10
-
 if False:
     # Generate data
-    generate_dataset(epochs=epochs)
+    generate_dataset()
 else:
     # Once the data exist, run the experiment
-    atime = time.time()
-    localise_features(repeats=1, epochs=10, restart=False)
-    btime = time.time()
+    mnum = 1
+    localise_features(mnum, repeats=1, restart=False)
     print((btime-atime)/60.0)
