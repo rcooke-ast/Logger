@@ -10,6 +10,7 @@ from utilities import generate_wave, rebin_subpix
 from matplotlib import pyplot as plt
 
 import tensorflow as tf
+from tensorflow.python.client import device_lib
 import keras.backend as K
 from keras.utils import plot_model, multi_gpu_model
 from keras.callbacks import ModelCheckpoint, CSVLogger
@@ -37,6 +38,11 @@ def mse_mask():
         #return K.mean(K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
+
+
+def get_available_gpus():
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos if x.device_type == 'GPU']
 
 
 def save_obj(obj, dirname):
@@ -74,13 +80,13 @@ def hyperparam(mnum):
                          conv_stride_2 = [1, 2, 4, 6],
                          conv_stride_3 = [1, 2, 4, 6],
                          # Pooling kernel size
-                         pool_kernel_1 = [2, 3, 4, 6, 8],
-                         pool_kernel_2 = [2, 3, 4, 6, 8],
-                         pool_kernel_3 = [2, 4, 4, 6, 8],
+                         pool_kernel_1 = [2, 3, 4, 6],
+                         pool_kernel_2 = [2, 3, 4, 6],
+                         pool_kernel_3 = [2, 3, 4, 6],
                          # Pooling stride
-                         pool_stride_1 = [1, 2, 4, 5, 6],
-                         pool_stride_2 = [1, 2, 3, 4, 5, 6, 7, 8],
-                         pool_stride_3 = [1, 2, 3, 4, 5, 6, 7, 8],
+                         pool_stride_1 = [1, 2, 3],
+                         pool_stride_2 = [1, 2, 3],
+                         pool_stride_3 = [1, 2, 3],
                          # Fully connected layers
                          fc1_neurons         = [256, 512, 1024, 2048, 4096],
                          fc2_N_neurons=[32, 64, 128, 256],
@@ -266,10 +272,14 @@ def evaluate_model(trainX, trainN, trainb,
     #assert(False)
     filepath = os.path.dirname(os.path.abspath(__file__))
     model_name = '/fit_data/simple/model_{0:03d}'.format(mnum)
+    ngpus = len(get_available_gpus())
     # Construct network
-    model = build_model_simple(hyperpar)
-    # Make this work on multiple GPUs
-    gpumodel = multi_gpu_model(model, gpus=1)
+    if ngpus > 1:
+        model = build_model_simple(hyperpar)
+        # Make this work on multiple GPUs
+        gpumodel = multi_gpu_model(model, gpus=ngpus)
+    else:
+        gpumodel = build_model_simple(hyperpar)
     # Summarize layers
     with open(filepath + model_name + '.summary', 'w') as f:
         with redirect_stdout(f):
