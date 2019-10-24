@@ -269,7 +269,7 @@ def evaluate_model(trainX, trainN, trainb,
     # Construct network
     model = build_model_simple(hyperpar)
     # Make this work on multiple GPUs
-    gpumodel = multi_gpu_model(model, gpus=4)
+    gpumodel = multi_gpu_model(model, gpus=1)
     # Summarize layers
     with open(filepath + model_name + '.summary', 'w') as f:
         with redirect_stdout(f):
