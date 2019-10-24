@@ -1,7 +1,7 @@
 import os
 import pdb
 import time
-import json
+import pickle
 import numpy as np
 from pyigm.fN.fnmodel import FNModel
 from pyigm.fN.mockforest import monte_HIcomp
@@ -39,6 +39,16 @@ def mse_mask():
     return loss
 
 
+def save_obj(obj, dirname):
+    with open(dirname + '.pkl', 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+
+def load_obj(dirname):
+    with open(dirname + '.pkl', 'rb') as f:
+        return pickle.load(f)
+
+
 def hyperparam(mnum):
     """Generate a random set of hyper parameters
 
@@ -52,25 +62,25 @@ def hyperparam(mnum):
                          num_batch_train     = [512, 1024, 2048, 4096],
                          num_batch_validate  = [64, 128, 256, 512],
                          # Number of filters in each convolutional layer
-                         conv_layer_filter_1 = [64, 80, 90, 100, 110, 120, 140, 160, 200],
-                         conv_layer_filter_2 = [80, 96, 128, 192, 256],
-                         conv_layer_filter_3 = [80, 96, 128, 192, 256],
-                         # Kernal size
-                         conv_layer_kernal_1 = [20, 22, 24, 26, 28, 32, 40, 48, 54],
-                         conv_layer_kernal_2 = [10, 14, 16, 20, 24, 28, 32, 34],
-                         conv_layer_kernal_3 = [10, 14, 16, 20, 24, 28, 32, 34],
+                         conv_filter_1 = [64, 80, 90, 100, 110, 120, 140, 160, 200],
+                         conv_filter_2 = [80, 96, 128, 192, 256],
+                         conv_filter_3 = [80, 96, 128, 192, 256],
+                         # Kernel size
+                         conv_kernel_1 = [20, 22, 24, 26, 28, 32, 40, 48, 54],
+                         conv_kernel_2 = [10, 14, 16, 20, 24, 28, 32, 34],
+                         conv_kernel_3 = [10, 14, 16, 20, 24, 28, 32, 34],
                          # Stride of each kernal
-                         conv_layer_stride_1 = [1, 2, 4, 6],
-                         conv_layer_stride_2 = [1, 2, 4, 6],
-                         conv_layer_stride_3 = [1, 2, 4, 6],
-                         # Pooling kernal size
-                         pool_layer_kernal_1 = [2, 3, 4, 6, 8],
-                         pool_layer_kernal_2 = [2, 3, 4, 6, 8],
-                         pool_layer_kernal_3 = [2, 4, 4, 6, 8],
+                         conv_stride_1 = [1, 2, 4, 6],
+                         conv_stride_2 = [1, 2, 4, 6],
+                         conv_stride_3 = [1, 2, 4, 6],
+                         # Pooling kernel size
+                         pool_kernel_1 = [2, 3, 4, 6, 8],
+                         pool_kernel_2 = [2, 3, 4, 6, 8],
+                         pool_kernel_3 = [2, 4, 4, 6, 8],
                          # Pooling stride
-                         pool_layer_stride_1 = [1, 2, 4, 5, 6],
-                         pool_layer_stride_2 = [1, 2, 3, 4, 5, 6, 7, 8],
-                         pool_layer_stride_3 = [1, 2, 3, 4, 5, 6, 7, 8],
+                         pool_stride_1 = [1, 2, 4, 5, 6],
+                         pool_stride_2 = [1, 2, 3, 4, 5, 6, 7, 8],
+                         pool_stride_3 = [1, 2, 3, 4, 5, 6, 7, 8],
                          # Fully connected layers
                          fc1_neurons         = [256, 512, 1024, 2048, 4096],
                          fc2_N_neurons=[32, 64, 128, 256],
@@ -82,8 +92,7 @@ def hyperparam(mnum):
     for key in allowed_hpars.keys():
         hyperpar[key] = np.random.choice(allowed_hpars[key])
     # Save these parameters and return the hyperpar
-    with open('fit_data/simple/model_{0:03d}.json'.format(mnum), 'w') as fp:
-        json.dump(hyperpar, fp, sort_keys=True, indent=4)
+    save_obj(hyperpar, 'fit_data/simple/model_{0:03d}'.format(mnum))
     return hyperpar
 
 
@@ -199,39 +208,37 @@ def yield_data(data, Nlabels, blabels, maskval=0.0):
 
 def build_model_simple(hyperpar):
     # Extract parameters
-    learning_rate = hyperpar['learning_rate']
-    l2_regpen = hyperpar['l2_regpen']
     fc1_neurons = hyperpar['fc1_neurons']
     fc2_N_neurons = hyperpar['fc2_N_neurons']
     fc2_b_neurons = hyperpar['fc2_b_neurons']
     fc2_z_neurons = hyperpar['fc2_z_neurons']
-    conv1_kernel = hyperpar['conv1_kernel']
-    conv2_kernel = hyperpar['conv2_kernel']
-    conv3_kernel = hyperpar['conv3_kernel']
-    conv1_filter = hyperpar['conv1_filter']
-    conv2_filter = hyperpar['conv2_filter']
-    conv3_filter = hyperpar['conv3_filter']
-    conv1_stride = hyperpar['conv1_stride']
-    conv2_stride = hyperpar['conv2_stride']
-    conv3_stride = hyperpar['conv3_stride']
-    pool1_kernel = hyperpar['pool1_kernel']
-    pool2_kernel = hyperpar['pool2_kernel']
-    pool3_kernel = hyperpar['pool3_kernel']
-    pool1_stride = hyperpar['pool1_stride']
-    pool2_stride = hyperpar['pool2_stride']
-    pool3_stride = hyperpar['pool3_stride']
+    conv1_kernel = hyperpar['conv_kernel_1']
+    conv2_kernel = hyperpar['conv_kernel_2']
+    conv3_kernel = hyperpar['conv_kernel_3']
+    conv1_filter = hyperpar['conv_filter_1']
+    conv2_filter = hyperpar['conv_filter_2']
+    conv3_filter = hyperpar['conv_filter_3']
+    conv1_stride = hyperpar['conv_stride_1']
+    conv2_stride = hyperpar['conv_stride_2']
+    conv3_stride = hyperpar['conv_stride_3']
+    pool1_kernel = hyperpar['pool_kernel_1']
+    pool2_kernel = hyperpar['pool_kernel_2']
+    pool3_kernel = hyperpar['pool_kernel_3']
+    pool1_stride = hyperpar['pool_stride_1']
+    pool2_stride = hyperpar['pool_stride_2']
+    pool3_stride = hyperpar['pool_stride_3']
 
     # Build model
     # Shape is (batches, steps, channels)
     # For example, a 3-color 1D image of side 100 pixels, dealt in batches of 32 would have a shape=(32,100,3)
     input_1 = Input(shape=(spec_len, 1), name='input_1')
     drop1 = Dropout(hyperpar['dropout_prob'])(input_1)
-    conv1 = Conv1D(filters=conv1_filter, kernel_size=conv1_kernel, strides=conv1_stride, activation='relu')(drop1)
-    pool1 = MaxPooling1D(pool_size=pool1_kernel, strides=pool1_stride)(conv1)
-    conv2 = Conv1D(filters=conv2_filter, kernel_size=conv2_kernel, strides=conv2_stride, activation='relu')(pool1)
-    pool2 = MaxPooling1D(pool_size=pool2_kernel, strides=pool2_stride)(conv2)
-    conv3 = Conv1D(filters=conv3_filter, kernel_size=conv3_kernel, strides=conv3_stride, activation='relu')(pool2)
-    pool3 = MaxPooling1D(pool_size=pool3_kernel, strides=pool3_stride)(conv3)
+    conv1 = Conv1D(filters=conv1_filter, kernel_size=(conv1_kernel,), strides=(conv1_stride,), activation='relu')(drop1)
+    pool1 = MaxPooling1D(pool_size=(pool1_kernel,), strides=(pool1_stride,))(conv1)
+    conv2 = Conv1D(filters=conv2_filter, kernel_size=(conv2_kernel,), strides=(conv2_stride,), activation='relu')(pool1)
+    pool2 = MaxPooling1D(pool_size=(pool2_kernel,), strides=(pool2_stride,))(conv2)
+    conv3 = Conv1D(filters=conv3_filter, kernel_size=(conv3_kernel,), strides=(conv3_stride,), activation='relu')(pool2)
+    pool3 = MaxPooling1D(pool_size=(pool3_kernel,), strides=(pool3_stride,))(conv3)
 
     # Interpretation model
     regpen = hyperpar['l2_regpen']
@@ -254,15 +261,15 @@ def build_model_simple(hyperpar):
 # fit and evaluate a model
 def evaluate_model(trainX, trainN, trainb,
                    testX, testN, testb, hyperpar,
-                   epochs=10, verbose=1):
+                   mnum, epochs=10, verbose=1):
     #yield_data(trainX, trainN, trainb)
     #assert(False)
     filepath = os.path.dirname(os.path.abspath(__file__))
-    model_name = "/fit_data/svoigt_speclen{0:d}_masked".format(spec_len)
+    model_name = '/fit_data/simple/model_{0:03d}'.format(mnum)
     # Construct network
     model = build_model_simple(hyperpar)
     # Make this work on multiple GPUs
-    gpumodel = multi_gpu_model(model, gpus=1)
+    gpumodel = multi_gpu_model(model, gpus=4)
     # Summarize layers
     with open(filepath + model_name + '.summary', 'w') as f:
         with redirect_stdout(f):
@@ -273,13 +280,13 @@ def evaluate_model(trainX, trainN, trainb,
     # Compile
     masking = True
     if masking:
-        loss = {'N_output': mse_mask(),
-                'z_output': mse_mask(),
-                'b_output': mse_mask()}
+        loss = {'output_N': mse_mask(),
+                'output_z': mse_mask(),
+                'output_b': mse_mask()}
     else:
-        loss = {'N_output': 'mse',
-                'z_output': 'mse',
-                'b_output': 'mse'}
+        loss = {'output_N': 'mse',
+                'output_z': 'mse',
+                'output_b': 'mse'}
     optadam = Adam(lr=hyperpar['learning_rate'], decay=hyperpar['learning_rate']/hyperpar['num_epochs'])
     gpumodel.compile(loss=loss, optimizer=optadam, metrics=['mean_squared_error'])
     # Initialise callbacks
@@ -386,7 +393,7 @@ def localise_features(mnum, repeats=3, restart=False):
                                           testX, testN, testb)
         else:
             scores, names = evaluate_model(trainX, trainN, trainb,
-                                           testX, testN, testb, hyperpar, epochs=hyperpar['num_epochs'])
+                                           testX, testN, testb, hyperpar, mnum, epochs=hyperpar['num_epochs'])
         if r == 0:
             for name in names:
                 allscores[name] = []
@@ -405,6 +412,12 @@ if False:
     generate_dataset()
 else:
     # Once the data exist, run the experiment
-    mnum = 1
-    localise_features(mnum, repeats=1, restart=False)
-    print((btime-atime)/60.0)
+    mnum = 0
+    while True:
+        try:
+            localise_features(mnum, repeats=1, restart=False)
+        except ValueError:
+            continue
+        mnum += 1
+        if mnum >= 1000:
+            break
