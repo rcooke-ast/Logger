@@ -507,5 +507,5 @@ else:
         except ValueError:
             continue
         mnum += 1
-        if mnum >= m_init+100:
+        if mnum >= m_init+1000:
             break
