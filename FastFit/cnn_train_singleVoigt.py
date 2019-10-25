@@ -499,7 +499,7 @@ if False:
     generate_dataset()
 else:
     # Once the data exist, run the experiment
-    m_init = 100
+    m_init = 0
     mnum = m_init
     while True:
         try:
