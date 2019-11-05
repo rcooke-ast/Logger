@@ -1,3 +1,4 @@
+import pdb
 import glob
 import copy
 import pickle
@@ -24,16 +25,16 @@ for file in files:
             for key in pk:
                 val.append(par[key])
                 name.append(key)
-            t = Table(copy.deepcopy(val), names=tuple(name))
+            t = Table(np.array(copy.deepcopy(val)), names=tuple(name))
         else:
             val = []
             for key in name:
                 val.append(par[key])
-            t.add_row(copy.deepcopy(val))
+            t.add_row(np.array(copy.deepcopy(val)))
         plt.plot(tab['epoch'], np.log10(tab['loss']), 'r-')
         plt.plot(tab['epoch'], np.log10(tab['val_loss']), 'r--')
         cntr += 1
 print('Number of models satisfying threshold = ', cntr)
 plt.show()
 
-print(t)
+t.write('best_pars.txt', format='ascii.fixed_width', overwrite=True)
