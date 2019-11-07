@@ -336,15 +336,20 @@ def evaluate_model(trainX, trainN, trainz,  trainb,
     return accuracy, gpumodel.metrics_names
 
 
-def restart_model(model_name, trainX, trainN, trainb,
-                   testX, testN, testb,
-                   epochs=10, verbose=1, masking=True):
+def restart_model(model_name, trainX, trainN, trainz, trainb,
+                   testX, testN, testz, testb, hyperpar,
+                   mnum, verbose=1, epochs=None, masking=True):
     filepath = os.path.dirname(os.path.abspath(__file__))+'/'
     # Load model
-    loadname = filepath + 'fit_data/' + model_name + '.hdf5'
-    model = load_model(loadname, compile=False)
-    # Make this work on multiple GPUs
-    gpumodel = multi_gpu_model(model, gpus=4)
+    loadname = filepath + 'fit_data/simple/model_{0:03d}.hdf5'.format(mnum)
+    ngpus = len(get_available_gpus())
+    # Construct network
+    if ngpus > 1:
+        model = load_model(loadname, compile=False)
+        # Make this work on multiple GPUs
+        gpumodel = multi_gpu_model(model, gpus=ngpus)
+    else:
+        gpumodel = load_model(loadname, compile=False)
     # Compile model
     if masking:
         loss = {'N_output': mse_mask(),
@@ -354,21 +359,23 @@ def restart_model(model_name, trainX, trainN, trainb,
         loss = {'N_output': 'mse',
                 'z_output': 'mse',
                 'b_output': 'mse'}
-    gpumodel.compile(loss=loss, optimizer='adam', metrics=['mean_squared_error'])
+    decay = hyperpar['lr_decay']*hyperpar['learning_rate']/hyperpar['num_epochs']
+    optadam = Adam(lr=hyperpar['learning_rate'], decay=decay)
+    gpumodel.compile(loss=loss, optimizer=optadam, metrics=['mean_squared_error'])
     # Initialise callbacks
-    ckp_name = filepath + model_name + '_chkp_restart.hdf5'
-    sav_name = filepath + model_name + '_save_restart.hdf5'
-    csv_name = filepath + model_name + '_restart.log'
+    ckp_name = filepath + 'fit_data/multi/model_{0:03d}.hdf5'.format(mnum)
+    sav_name = filepath + 'fit_data/multi/model_{0:03d}_save.hdf5'.format(mnum)
+    csv_name = filepath + 'fit_data/multi/model_{0:03d}.log'.format(mnum)
     checkpointer = ModelCheckpoint(filepath=ckp_name, verbose=1, save_best_only=True)
     csv_logger = CSVLogger(csv_name, append=True)
     # Fit network
     gpumodel.fit_generator(
-        yield_data(trainX, trainN, trainb),
-        steps_per_epoch=2000,  # Total number of batches (i.e. num data/batch size)
+        yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size']),
+        steps_per_epoch=hyperpar['num_batch_train'],  # Total number of batches (i.e. num data/batch size)
         epochs=epochs, verbose=verbose,
         callbacks=[checkpointer, csv_logger],
-        validation_data=yield_data(testX, testN, testb),
-        validation_steps=200)
+        validation_data=yield_data(testX, testN, testz, testb, hyperpar['batch_size']),
+        validation_steps=hyperpar['num_batch_validate'])
 
     gpumodel.save(sav_name)
 
@@ -401,8 +408,12 @@ def summarize_results(scores):
 
 # Detect features in a dataset
 def localise_features(mnum, repeats=3, restart=False):
-    # Generate hyperparameters
-    hyperpar = hyperparam(mnum)
+    if restart:
+        # Load hyperparameters
+        hyperpar = load_obj('fit_data/simple/model_{0:03d}'.format(mnum))
+    else:
+        # Generate hyperparameters
+        hyperpar = hyperparam(mnum)
     # load data
     trainX, trainN, trainz, trainb,\
     testX, testN, testz, testb = load_dataset()
@@ -411,8 +422,8 @@ def localise_features(mnum, repeats=3, restart=False):
     for r in range(repeats):
         if restart:
             model_name = 'svoigt_speclen256_masked_save'
-            scores, names = restart_model(model_name, trainX, trainN, trainb,
-                                          testX, testN, testb)
+            scores, names = restart_model(trainX, trainN, trainz, trainb,
+                                          testX, testN, testz, testb, hyperpar, mnum, epochs=hyperpar['num_epochs'])
         else:
             scores, names = evaluate_model(trainX, trainN, trainz, trainb,
                                            testX, testN, testz, testb, hyperpar, mnum, epochs=hyperpar['num_epochs'])
