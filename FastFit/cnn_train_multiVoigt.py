@@ -180,11 +180,12 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0):
         tlocs = np.where(trainz[0, :] == 1)[0]-1
         plt.vlines(tlocs, 0, 1, 'r', '-')
         plt.show()
-    testX = fdata_all[ntrain:, -speccut:]
-    testN = Nlabel_all[ntrain:, -speccut:, 0]
-    testz = zlabel_all[ntrain:, -speccut:, 0]
-    testb = blabel_all[ntrain:, -speccut:, 0]
+    testX = fdata_all[ntrain:, :]
+    testN = Nlabel_all[ntrain:, :, 0]
+    testz = zlabel_all[ntrain:, :, 0]
+    testb = blabel_all[ntrain:, :, 0]
     print(trainX.shape[1], trainX.shape[1]//epochs, trainX.shape[1]%epochs)
+    print(trainX.shape)
     return trainX, trainN, trainz, trainb, testX, testN, testz, testb
 
 
