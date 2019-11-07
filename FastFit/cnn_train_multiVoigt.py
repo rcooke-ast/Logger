@@ -26,7 +26,6 @@ from contextlib import redirect_stdout
 
 velstep = 2.5    # Pixel size in km/s
 spec_len = 256
-spec_ext = 64
 nHIwav = 1    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
@@ -190,24 +189,23 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0):
 
 
 def yield_data(data, Nlabels, zlabels, blabels, batch_sz, maskval=0.0):
-    cntr_batch = 0
-    cenpix = (spec_len+spec_ext)//2
+    cenpix = (spec_len)//2
     ll = np.arange(batch_sz).repeat(spec_len)
     while True:
         indict = ({})
         pertrb_s = np.random.randint(0, data.shape[0], batch_sz)
-        pertrb_w = np.random.randint(cenpix, data.shape[0]-cenpix, batch_sz)
-        pp = pertrb.reshape((batch_sz, 1)).repeat(spec_len, axis=1) + np.arange(spec_len)
-        X_batch = data[ll+cntr_batch, pp.flatten()].reshape((batch_sz, spec_len, 1))
+        pertrb_w = np.random.randint(0, data.shape[1]-spec_len, batch_sz)
+        pw = pertrb_w.reshape((batch_sz, 1)).repeat(spec_len, axis=1) + np.arange(spec_len)
+        ps = pertrb_s.reshape((batch_sz, 1)).repeat(spec_len, axis=1)
+        X_batch = data[ps.flatten(), pw.flatten()].reshape((batch_sz, spec_len, 1))
         indict['input_1'] = X_batch.copy()
-        z_batch = spec_len//2 - cenpix + pertrb.copy()
         # Extract the relevant bits of information
-        yld_N = Nlabels[cntr_batch:cntr_batch+batch_sz]
-        yld_z = z_batch
-        yld_b = blabels[cntr_batch:cntr_batch+batch_sz]
+        yld_N = Nlabels[pertrb_s, pertrb_w+cenpix]
+        yld_z = zlabels[pertrb_s, pertrb_w+cenpix]
+        yld_b = blabels[pertrb_s, pertrb_w+cenpix]
         # Mask
         if True:
-            wmsk = np.where(X_batch[:, spec_len//2, 0] > 0.95)
+            wmsk = np.where(X_batch[:, cenpix, 0] > 0.95)
             yld_N[wmsk] = maskval
             yld_z[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
             yld_b[wmsk] = maskval
@@ -218,10 +216,6 @@ def yield_data(data, Nlabels, zlabels, blabels, batch_sz, maskval=0.0):
 
 #        pdb.set_trace()
         yield (indict, outdict)
-
-        cntr_batch += batch_sz
-        if cntr_batch >= data.shape[0]-batch_sz:
-            cntr_batch = 0
 
 
 def build_model_simple(hyperpar):
