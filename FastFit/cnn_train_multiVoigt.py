@@ -184,7 +184,6 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0):
     testN = Nlabel_all[ntrain:, :, 0]
     testz = zlabel_all[ntrain:, :, 0]
     testb = blabel_all[ntrain:, :, 0]
-    print(trainX.shape[1], trainX.shape[1]//epochs, trainX.shape[1]%epochs)
     print(trainX.shape)
     return trainX, trainN, trainz, trainb, testX, testN, testz, testb
 
