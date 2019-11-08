@@ -336,9 +336,10 @@ def evaluate_model(trainX, trainN, trainz,  trainb,
     return accuracy, gpumodel.metrics_names
 
 
-def restart_model(model_name, trainX, trainN, trainz, trainb,
-                   testX, testN, testz, testb, hyperpar,
-                   mnum, verbose=1, epochs=None, masking=True):
+def restart_model(trainX, trainN, trainz, trainb,
+                   testX, testN, testz, testb,
+                   hyperpar, mnum, verbose=1,
+                  epochs=None, masking=True):
     filepath = os.path.dirname(os.path.abspath(__file__))+'/'
     # Load model
     loadname = filepath + 'fit_data/simple/model_{0:03d}.hdf5'.format(mnum)
@@ -352,13 +353,13 @@ def restart_model(model_name, trainX, trainN, trainz, trainb,
         gpumodel = load_model(loadname, compile=False)
     # Compile model
     if masking:
-        loss = {'N_output': mse_mask(),
-                'z_output': mse_mask(),
-                'b_output': mse_mask()}
+        loss = {'output_N': mse_mask(),
+                'output_z': mse_mask(),
+                'output_b': mse_mask()}
     else:
-        loss = {'N_output': 'mse',
-                'z_output': 'mse',
-                'b_output': 'mse'}
+        loss = {'output_N': 'mse',
+                'output_z': 'mse',
+                'output_b': 'mse'}
     decay = hyperpar['lr_decay']*hyperpar['learning_rate']/hyperpar['num_epochs']
     optadam = Adam(lr=hyperpar['learning_rate'], decay=decay)
     gpumodel.compile(loss=loss, optimizer=optadam, metrics=['mean_squared_error'])
@@ -421,7 +422,6 @@ def localise_features(mnum, repeats=3, restart=False):
     allscores = dict({})
     for r in range(repeats):
         if restart:
-            model_name = 'svoigt_speclen256_masked_save'
             scores, names = restart_model(trainX, trainN, trainz, trainb,
                                           testX, testN, testz, testb, hyperpar, mnum, epochs=hyperpar['num_epochs'])
         else:
@@ -449,7 +449,7 @@ else:
     mnum = m_init
     while True:
         try:
-            localise_features(mnum, repeats=1, restart=False)
+            localise_features(mnum, repeats=1, restart=True)
         except ValueError:
             continue
         mnum += 1
