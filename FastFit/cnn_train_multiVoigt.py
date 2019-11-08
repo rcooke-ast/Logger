@@ -382,7 +382,7 @@ def restart_model(trainX, trainN, trainz, trainb,
 
     # Evaluate model
     #    _, accuracy
-    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testb),
+    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testz, testb, hyperpar['batch_size']),
                                            steps=testX.shape[0],
                                            verbose=0)
     return accuracy, gpumodel.metrics_names

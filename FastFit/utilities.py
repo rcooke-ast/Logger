@@ -18,12 +18,15 @@ def load_atomic(return_HIwav=True):
     Load the atomic transitions data
     """
 #    dir = "/Users/rcooke/Software/ALIS/alis/data/"
-    dir = "/home/rcooke/Software/ALIS/alis/data/"
-#    dir = "/cosma5/data/durham/rcooke/LyaForest/Software/FastFit/"
     atmname = "atomic.xml"
     print("Loading atomic data")
     # If the user specifies the atomic data file, make sure that it exists
-    table = parse_single_table(dir+atmname)
+    try:
+        dir = "/home/rcooke/Software/ALIS/alis/data/"
+        table = parse_single_table(dir+atmname)
+    except:
+        dir = "/cosma/home/durham/rcooke/Software/ALIS/alis/data/"
+        table = parse_single_table(dir+atmname)
     isotope = table.array['MassNumber'].astype("|S3").astype(np.object)+table.array['Element']
     atmdata = dict({})
     atmdata['Ion'] = np.array(isotope+b"_"+table.array['Ion']).astype(np.str)
