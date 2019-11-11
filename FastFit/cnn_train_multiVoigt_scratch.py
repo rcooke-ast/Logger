@@ -24,9 +24,8 @@ from keras.layers import Dropout, Flatten
 from keras import regularizers
 from contextlib import redirect_stdout
 
-savepath = 'multideep'
+savepath = 'multiscr'
 velstep = 2.5    # Pixel size in km/s
-spec_len = 256
 nHIwav = 1    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
 ww = np.where(atmdata["Ion"] == "1H_I")
@@ -74,6 +73,7 @@ def hyperparam_orig(mnum):
                          batch_size         = [15000],
                          num_batch_train    = [50],
                          num_batch_validate = [20],
+                         spec_len = [256],
                          # Number of filters in each convolutional layer
                          conv_filter_1 = [256],
                          conv_filter_2 = [128],
@@ -124,34 +124,35 @@ def hyperparam(mnum):
     mnum (int): Model index number
     """
     # Define all of the allowed parameter space
-    allowed_hpars = dict(learning_rate      = [0.0005, 0.0007, 0.0010, 0.0030, 0.0050, 0.0070, 0.0100],
+    allowed_hpars = dict(learning_rate      = [0.00005, 0.0001, 0.0005, 0.0007, 0.0010],
                          lr_decay           = [0.0, 1.0],
                          l2_regpen          = [0.0, 0.00001, 0.00010, 0.00100, 0.00500, 0.01000],
                          dropout_prob       = [0.0, 0.01, 0.02, 0.05],
-                         num_epochs         = [30, 50, 100],
-                         batch_size         = [100, 500, 1000, 2000, 5000],
-                         num_batch_train    = [128, 256, 512, 1024],
-                         num_batch_validate = [32, 64, 128],
+                         num_epochs         = [100, 200, 500],
+                         batch_size         = [2000, 5000, 10000, 20000],
+                         num_batch_train    = [1024, 2048, 4096],
+                         num_batch_validate = [64, 128, 256],
+                         spec_len           = [32, 64, 128, 256, 512, 1024],
                          # Number of filters in each convolutional layer
-                         conv_filter_1 = [80, 96, 128, 192, 256],
-                         conv_filter_2 = [80, 96, 128, 192, 256],
-                         conv_filter_3 = [80, 96, 128, 192, 256],
+                         conv_filter_1 = [48, 64, 96, 128, 256],
+                         conv_filter_2 = [48, 64, 96, 128, 256],
+                         conv_filter_3 = [48, 64, 96, 128, 256],
                          # Kernel size
                          conv_kernel_1 = [20, 22, 24, 26, 28, 32, 40, 48, 54],
                          conv_kernel_2 = [10, 14, 16, 20, 24, 28, 32, 34],
                          conv_kernel_3 = [10, 14, 16, 20, 24, 28, 32, 34],
                          # Stride of each kernal
-                         conv_stride_1 = [1, 2, 4, 6],
-                         conv_stride_2 = [1, 2, 4, 6],
-                         conv_stride_3 = [1, 2, 4, 6],
+                         conv_stride_1 = [1, 2, 3],
+                         conv_stride_2 = [1, 2, 3],
+                         conv_stride_3 = [1, 2, 3],
                          # Pooling kernel size
                          pool_kernel_1 = [2, 3, 4, 6],
                          pool_kernel_2 = [2, 3, 4, 6],
                          pool_kernel_3 = [2, 3, 4, 6],
                          # Pooling stride
-                         pool_stride_1 = [1, 2, 3],
-                         pool_stride_2 = [1, 2, 3],
-                         pool_stride_3 = [1, 2, 3],
+                         pool_stride_1 = [1, 2],
+                         pool_stride_2 = [1, 2],
+                         pool_stride_3 = [1, 2],
                          # Fully connected layers
                          fc1_neurons   = [256, 512, 1024, 2048],
                          fc2_N_neurons = [32, 64, 128, 256],
@@ -198,7 +199,7 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0):
     return trainX, trainN, trainz, trainb, testX, testN, testz, testb
 
 
-def yield_data(data, Nlabels, zlabels, blabels, batch_sz, maskval=0.0):
+def yield_data(data, Nlabels, zlabels, blabels, batch_sz, spec_len, maskval=0.0):
     cenpix = (spec_len)//2
     ll = np.arange(batch_sz).repeat(spec_len)
     while True:
@@ -238,6 +239,7 @@ def yield_data(data, Nlabels, zlabels, blabels, batch_sz, maskval=0.0):
 
 def build_model_simple(hyperpar):
     # Extract parameters
+    spec_len = hyperpar['spec_len']
     fc1_neurons = hyperpar['fc1_neurons']
     fc2_N_neurons = hyperpar['fc2_N_neurons']
     fc2_b_neurons = hyperpar['fc2_b_neurons']
@@ -290,6 +292,7 @@ def build_model_simple(hyperpar):
 
 def build_model_deep(hyperpar):
     # Extract parameters
+    spec_len = hyperpar['spec_len']
     fc1_neurons = hyperpar['fc1_neurons']
     fc2_N_neurons = hyperpar['fc2_N_neurons']
     fc2_b_neurons = hyperpar['fc2_b_neurons']
@@ -392,18 +395,18 @@ def evaluate_model(trainX, trainN, trainz,  trainb,
     csv_logger = CSVLogger(csv_name, append=True)
     # Fit network
     gpumodel.fit_generator(
-        yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size']),
+        yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size'], hyperpar['spec_len']),
         steps_per_epoch=hyperpar['num_batch_train'],  # Total number of batches (i.e. num data/batch size)
         epochs=epochs, verbose=verbose,
         callbacks=[checkpointer, csv_logger],
-        validation_data=yield_data(testX, testN, testz, testb, hyperpar['batch_size']),
+        validation_data=yield_data(testX, testN, testz, testb, hyperpar['batch_size'], hyperpar['spec_len']),
         validation_steps=hyperpar['num_batch_validate'])
 
     gpumodel.save(sav_name)
 
     # Evaluate model
 #    _, accuracy
-    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testz, testb, hyperpar['batch_size']),
+    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testz, testb, hyperpar['batch_size'], hyperpar['spec_len']),
                                            steps=testX.shape[0],
                                            verbose=0)
     return accuracy, gpumodel.metrics_names
@@ -444,18 +447,18 @@ def restart_model(trainX, trainN, trainz, trainb,
     csv_logger = CSVLogger(csv_name, append=True)
     # Fit network
     gpumodel.fit_generator(
-        yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size']),
+        yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size'], hyperpar['spec_len']),
         steps_per_epoch=hyperpar['num_batch_train'],  # Total number of batches (i.e. num data/batch size)
         epochs=epochs, verbose=verbose,
         callbacks=[checkpointer, csv_logger],
-        validation_data=yield_data(testX, testN, testz, testb, hyperpar['batch_size']),
+        validation_data=yield_data(testX, testN, testz, testb, hyperpar['batch_size'], hyperpar['spec_len']),
         validation_steps=hyperpar['num_batch_validate'])
 
     gpumodel.save(sav_name)
 
     # Evaluate model
     #    _, accuracy
-    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testz, testb, hyperpar['batch_size']),
+    accuracy = gpumodel.evaluate_generator(yield_data(testX, testN, testz, testb, hyperpar['batch_size'], hyperpar['spec_len']),
                                            steps=testX.shape[0],
                                            verbose=0)
     return accuracy, gpumodel.metrics_names
@@ -488,13 +491,7 @@ def localise_features(mnum, repeats=3, restart=False):
     else:
         # Generate hyperparameters
         hyperpar = hyperparam(mnum)
-        hyperpar = hyperparam_orig(mnum)
-        hyperpar = load_obj('fit_data/simple/model_1047')
-#fit_data/simple/model_1047.log 48.13608062826097
-#fit_data/simple/model_1102.log 49.22927188128233
-#fit_data/simple/model_1009.log 56.22459273412824
-#fit_data/simple/model_1034.log 52.56889292597771
-#fit_data/simple/model_1045.log 49.67287328094244
+        #hyperpar = hyperparam_orig(mnum)
 
     # load data
     trainX, trainN, trainz, trainb,\
@@ -527,9 +524,8 @@ if False:
 else:
     # Once the data exist, run the experiment
     m_init = 0
-    nrun = 1  #1000
+    nrun = 1000
     mnum = m_init
-    localise_features(mnum, repeats=1, restart=False)
     while True:
         try:
             localise_features(mnum, repeats=1, restart=False)
