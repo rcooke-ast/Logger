@@ -128,11 +128,11 @@ def hyperparam(mnum):
                          lr_decay           = [0.0, 1.0],
                          l2_regpen          = [0.0, 0.00001, 0.00010, 0.00100, 0.00500, 0.01000],
                          dropout_prob       = [0.0, 0.01, 0.02, 0.05],
-                         num_epochs         = [100, 200, 500],
-                         batch_size         = [2000, 5000, 10000, 20000],
-                         num_batch_train    = [1024, 2048, 4096],
+                         num_epochs         = [50, 100, 150],
+                         batch_size         = [2000, 5000, 10000, 15000],
+                         num_batch_train    = [512, 1024, 2048],
                          num_batch_validate = [64, 128, 256],
-                         spec_len           = [32, 64, 128, 256, 512, 1024],
+                         spec_len           = [32, 64, 128, 256, 512],
                          # Number of filters in each convolutional layer
                          conv_filter_1 = [48, 64, 96, 128, 256],
                          conv_filter_2 = [48, 64, 96, 128, 256],
@@ -226,6 +226,7 @@ def yield_data(data, Nlabels, zlabels, blabels, batch_sz, spec_len, maskval=0.0)
                    'output_b': yld_b}
         if False:
             # Debugging
+            return (indict, outdict)
             pdb.set_trace()
             from matplotlib import pyplot as plt
             idx=0
@@ -350,8 +351,8 @@ def build_model_deep(hyperpar):
 def evaluate_model(trainX, trainN, trainz,  trainb,
                    testX, testN, testz, testb, hyperpar,
                    mnum, epochs=10, verbose=1):
-    #yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size'])
-    #assert(False)
+    # data = yield_data(trainX, trainN, trainz, trainb, hyperpar['batch_size'], hyperpar['spec_len'])
+    # pdb.set_trace()
     filepath = os.path.dirname(os.path.abspath(__file__))
     model_name = '/fit_data/{0:s}/model_{1:03d}'.format(savepath, mnum)
     ngpus = len(get_available_gpus())
