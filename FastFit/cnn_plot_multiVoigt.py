@@ -11,13 +11,13 @@ def load_obj(dirname):
     with open(dirname + '.pkl', 'rb') as f:
         return pickle.load(f)
 
-filedir = 'fit_data/simple/'
+filedir = 'fit_data/multiscr/'
 files = glob.glob(filedir+'model_????.log')
 cntr = 0
 objs = []
 for file in files:
-    tab_s = Table.read(file, format='ascii.csv')
-    tab_m = Table.read(file.replace('/simple/', '/multi/'), format='ascii.csv')
+    tab_m = Table.read(file, format='ascii.csv')
+    #tab_m = Table.read(file.replace('/simple/', '/multiscr/'), format='ascii.csv')
     if np.log10(tab_m['loss'])[-1] < 1.75:
         par = load_obj(file.replace('.log', ''))
         if cntr == 0:

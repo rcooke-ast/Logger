@@ -24,7 +24,7 @@ from keras.layers import Dropout, Flatten
 from keras import regularizers
 from contextlib import redirect_stdout
 
-savepath = 'multiscr'
+savepath = 'multiscr_zmsk'
 velstep = 2.5    # Pixel size in km/s
 nHIwav = 1    # Number of lyman series lines to consider
 atmdata = load_atomic(return_HIwav=False)
@@ -39,6 +39,17 @@ def mse_mask():
     def loss(y_true, y_pred):
         epsilon = K.ones_like(y_true[0,:])*0.00001
         return K.mean( (y_true/(y_true+epsilon)) * K.square(y_pred - y_true), axis=-1)
+        #return K.mean(K.square(y_pred - y_true), axis=-1)
+    # Return a function
+    return loss
+
+
+# Define custom loss
+def mse_mask_z():
+    # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
+    def loss(y_true, y_pred):
+        epsilon = K.ones_like(y_true[0,:])*0.00001
+        return K.mean( (y_true/(y_true+epsilon)) * K.square(y_pred - y_true)/y_true, axis=-1)
         #return K.mean(K.square(y_pred - y_true), axis=-1)
     # Return a function
     return loss
@@ -215,8 +226,12 @@ def yield_data(data, Nlabels, zlabels, blabels, batch_sz, spec_len, maskval=0.0)
         yld_z = zlabels[pertrb_s, pertrb_w+cenpix]
         yld_b = blabels[pertrb_s, pertrb_w+cenpix]
         # Mask
-        if True:
-            wmsk = np.where(X_batch[:, cenpix, 0] > 0.95)
+        if False:
+            # wmsk = np.where(X_batch[:, cenpix, 0] > 0.95)
+            # yld_N[wmsk] = maskval
+            # yld_z[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
+            # yld_b[wmsk] = maskval
+            wmsk = np.where(np.abs(yld_z) > 10)
             yld_N[wmsk] = maskval
             yld_z[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
             yld_b[wmsk] = maskval
@@ -379,7 +394,7 @@ def evaluate_model(trainX, trainN, trainz,  trainb,
     masking = True
     if masking:
         loss = {'output_N': mse_mask(),
-                'output_z': mse_mask(),
+                'output_z': mse_mask_z(),
                 'output_b': mse_mask()}
     else:
         loss = {'output_N': 'mse',
