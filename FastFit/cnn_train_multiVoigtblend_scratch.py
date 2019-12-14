@@ -154,13 +154,13 @@ def hyperparam(mnum):
                          conv_kernel_2 = [10, 14, 16, 20, 24, 28, 32, 34],
                          conv_kernel_3 = [10, 14, 16, 20, 24, 28, 32, 34],
                          # Stride of each kernal
-                         conv_stride_1 = [1, 2, 3],
-                         conv_stride_2 = [1, 2, 3],
-                         conv_stride_3 = [1, 2, 3],
+                         conv_stride_1 = [1, 2],
+                         conv_stride_2 = [1, 2],
+                         conv_stride_3 = [1, 2],
                          # Pooling kernel size
-                         pool_kernel_1 = [2, 3, 4, 6],
-                         pool_kernel_2 = [2, 3, 4, 6],
-                         pool_kernel_3 = [2, 3, 4, 6],
+                         pool_kernel_1 = [2, 4],
+                         pool_kernel_2 = [2, 4],
+                         pool_kernel_3 = [2, 4],
                          # Pooling stride
                          pool_stride_1 = [1, 2],
                          pool_stride_2 = [1, 2],
