@@ -322,9 +322,9 @@ def build_model_simple(hyperpar):
     output_N = Dense(1, activation='linear', name='output_N')(drop2_N)
     output_z = Dense(1, activation='linear', name='output_z')(drop2_z)
     output_b = Dense(1, activation='linear', name='output_b')(drop2_b)
-    output_Nb = Dense(1, activation='linear', name='output_N')(drop2_Nb)
-    output_zb = Dense(1, activation='linear', name='output_z')(drop2_zb)
-    output_bb = Dense(1, activation='linear', name='output_b')(drop2_bb)
+    output_Nb = Dense(1, activation='linear', name='output_Nb')(drop2_Nb)
+    output_zb = Dense(1, activation='linear', name='output_zb')(drop2_zb)
+    output_bb = Dense(1, activation='linear', name='output_bb')(drop2_bb)
     model = Model(inputs=[input_1], outputs=[output_N, output_z, output_b, output_Nb, output_zb, output_bb])
     return model
 
