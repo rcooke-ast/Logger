@@ -537,8 +537,8 @@ def localise_features(mnum, repeats=3, restart=False):
         hyperpar = load_obj('fit_data/simple/model_{0:03d}'.format(mnum))
     else:
         # Generate hyperparameters
-        hyperpar = hyperparam(mnum)
-        #hyperpar = hyperparam_orig(mnum)
+        #hyperpar = hyperparam(mnum)
+        hyperpar = hyperparam_orig(mnum)
 
     # load data
     trainX, trainN, trainz, trainb,\
@@ -573,6 +573,7 @@ else:
     m_init = 0
     nrun = 1000
     mnum = m_init
+    localise_features(mnum, repeats=1, restart=False)
     while True:
         try:
             localise_features(mnum, repeats=1, restart=False)
