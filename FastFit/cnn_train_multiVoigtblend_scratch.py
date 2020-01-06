@@ -24,7 +24,7 @@ from keras.layers import Dropout, Flatten
 from keras import regularizers
 from contextlib import redirect_stdout
 
-savepath = 'multiscr_blend'
+savepath = 'multiscr_blend_bzfix'
 velstep = 2.5    # Pixel size in km/s
 nHIwav = 1       # Number of lyman series lines to consider
 zmskrng = 10     # Number of pixels away from a line centre that we wish to include in MSE
@@ -136,19 +136,19 @@ def hyperparam(mnum):
     mnum (int): Model index number
     """
     # Define all of the allowed parameter space
-    allowed_hpars = dict(learning_rate      = [0.00005, 0.0001, 0.0005, 0.0007, 0.0010],
+    allowed_hpars = dict(learning_rate      = [0.00005, 0.0001, 0.0005, 0.0007, 0.0010, 0.0020],
                          lr_decay           = [0.0, 1.0],
                          l2_regpen          = [0.0, 0.00001, 0.00010, 0.00100, 0.00500, 0.01000],
                          dropout_prob       = [0.0, 0.01, 0.02, 0.05],
-                         num_epochs         = [50, 100, 150],
-                         batch_size         = [2000, 5000, 10000, 15000],
-                         num_batch_train    = [512, 1024, 2048],
+                         num_epochs         = [25, 50, 75],
+                         batch_size         = [2000, 5000, 10000, 15000, 20000],
+                         num_batch_train    = [512, 1024, 2048, 4096, 8192],
                          num_batch_validate = [64, 128, 256],
                          spec_len           = [32, 64, 128, 256, 512],
                          # Number of filters in each convolutional layer
-                         conv_filter_1 = [48, 64, 96, 128, 256],
-                         conv_filter_2 = [48, 64, 96, 128, 256],
-                         conv_filter_3 = [48, 64, 96, 128, 256],
+                         conv_filter_1 = [32, 48, 64, 96, 128, 256],
+                         conv_filter_2 = [32, 48, 64, 96, 128, 256],
+                         conv_filter_3 = [32, 48, 64, 96, 128, 256],
                          # Kernel size
                          conv_kernel_1 = [20, 22, 24, 26, 28, 32, 40, 48, 54],
                          conv_kernel_2 = [10, 14, 16, 20, 24, 28, 32, 34],
@@ -188,9 +188,9 @@ def load_dataset(zem=3.0, snr=0, ftrain=2.0/2.25, numspec=25000, ispec=0):
     wdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_wave.npy".format(extstr))
     wuse = np.where(wdata_all > wmin)[0]
     fdata_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_normalised_fluxonly.npy".format(extstr))[:5000, wuse]
-    Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
-    blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
-    zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly_vs0-ve5000.npy".format(extstr, nHIwav))[:, wuse, :]
+    Nlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_Nlabelonly_vs0-ve5000_fixz.npy".format(extstr, nHIwav))[:, wuse, :]
+    blabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_blabelonly_vs0-ve5000_fixz.npy".format(extstr, nHIwav))[:, wuse, :]/velstep
+    zlabel_all = np.load("label_data/cnn_qsospec_fluxspec_{0:s}_nLy{1:d}_zlabelonly_vs0-ve5000_fixz.npy".format(extstr, nHIwav))[:, wuse, :]
     ntrain = int(ftrain*fdata_all.shape[0])
     trainX = fdata_all[:ntrain, :]
     trainN = Nlabel_all[:ntrain, :, :]

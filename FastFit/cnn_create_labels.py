@@ -147,6 +147,8 @@ def generate_labels(ispec, wdata, fdata, zdata, Ndata, bdata, snr=0, snr_thresh=
         zmax = 0.0
     else:
         zmax = np.max(z_sort[wlc])
+    # Generate a spline to get pixel of maximum optical depth
+    amxarr = interpolate.interp1d(wdata, np.arange(wdata.shape[0]), kind='cubic')
     print("Preparing ID_labels for spectrum {0:d}/{1:d}".format(dd+1, nspec))
     for zz in range(z_sort.size):
         if z_sort[zz] == -1:
@@ -165,7 +167,7 @@ def generate_labels(ispec, wdata, fdata, zdata, Ndata, bdata, snr=0, snr_thresh=
                 # This H I line of this absorber is at a lower wavelength than the LL of the highest redshift LLS
                 continue
             amx = np.argmax(odtmp[:, vv])
-            pixdiff = widarr - amx
+            pixdiff = widarr - amxarr((1.0+z_sort[zz])*HIwav[vv])
 
             # First deal with saturated pixels
             limsat = 10.0/snr
@@ -285,19 +287,19 @@ if __name__ == "__main__":
         specplot = 1
         cont = generate_continuum(specplot, wdata)
         ymin, ymax = 0.0, np.max(fdata_all[specplot, :])
-        plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps')
+        plt.plot(wdata, fdata_all[specplot, :], 'k-', drawstyle='steps-mid')
         # Plot Lya
         ww = np.where(ID_labels[specplot, :] == 1)
         plt.vlines(HIwav[0]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'r', '-')
-        plt.plot(wdata[ww], cont[ww], 'ro', drawstyle='steps')
+        plt.plot(wdata[ww], cont[ww], 'ro', drawstyle='steps-mid')
         # Plot Lyb
         ww = np.where(ID_labels[specplot, :] == 2)
         plt.vlines(HIwav[1]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'g', '--')
-        plt.plot(wdata[ww], cont[ww], 'go', drawstyle='steps')
+        plt.plot(wdata[ww], cont[ww], 'go', drawstyle='steps-mid')
         # Plot Lyg
         ww = np.where(ID_labels[specplot, :] == 3)
         plt.vlines(HIwav[2]*(1.0+zdata_all[specplot, :].flatten()), ymin, ymax, 'b', ':')
-        plt.plot(wdata[ww], cont[ww], 'bo', drawstyle='steps')
+        plt.plot(wdata[ww], cont[ww], 'bo', drawstyle='steps-mid')
         plt.show()
 
     if False:
@@ -327,7 +329,7 @@ if __name__ == "__main__":
     #print(ID_labels.shape, fdata_all.shape)
     exttxt = "_vs{0:d}-ve{1:d}".format(val_start, val_end)
     #np.save(fname.replace(".npy", "_nLy{0:d}_fluxonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), fdata_all)
-    np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), ID_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), N_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), b_labels)
-    np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly{1:s}.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), z_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_IDlabelonly{1:s}_fixz.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), ID_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_Nlabelonly{1:s}_fixz.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), N_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_blabelonly{1:s}_fixz.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), b_labels)
+    np.save(fname.replace(".npy", "_nLy{0:d}_zlabelonly{1:s}_fixz.npy".format(nHIwav, exttxt)).replace("train_data/", "label_data/"), z_labels)
