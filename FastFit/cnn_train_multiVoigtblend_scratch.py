@@ -139,7 +139,7 @@ def hyperparam(mnum):
     allowed_hpars = dict(learning_rate      = [0.00005, 0.0001, 0.0005, 0.0007, 0.0010, 0.0020],
                          lr_decay           = [0.0, 1.0],
                          l2_regpen          = [0.0, 0.00001, 0.00010, 0.00100, 0.00500, 0.01000],
-                         dropout_prob       = [0.0, 0.01, 0.02, 0.05],
+                         dropout_prob       = [0.0, 0.01, 0.02, 0.05, 0.1],
                          num_epochs         = [25, 50, 75],
                          batch_size         = [2000, 5000, 10000, 15000, 20000],
                          num_batch_train    = [512, 1024, 2048, 4096, 8192],
