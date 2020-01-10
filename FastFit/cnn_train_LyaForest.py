@@ -24,7 +24,7 @@ from keras.layers import Dropout, Flatten
 from keras import regularizers
 from contextlib import redirect_stdout
 
-savepath = 'multiscr_blend_bzfix'
+savepath = 'lyaforest_nonoise'
 velstep = 2.5    # Pixel size in km/s
 nHIwav = 1       # Number of lyman series lines to consider
 zmskrng = 10     # Number of pixels away from a line centre that we wish to include in MSE
@@ -108,6 +108,7 @@ def hyperparam_orig(mnum):
                          pool_stride_3 = [1],#, 2, 3],
                          # Fully connected layers
                          fc1_neurons   = [4096],
+                         fc2_a_neurons = [32, 64, 128, 256],
                          fc2_N_neurons = [32, 64, 128, 256],
                          fc2_z_neurons = [32, 64, 128, 256],
                          fc2_b_neurons = [32, 64, 128, 256],
@@ -167,6 +168,7 @@ def hyperparam(mnum):
                          pool_stride_3 = [1, 2],
                          # Fully connected layers
                          fc1_neurons   = [256, 512, 1024, 2048],
+                         fc2_a_neurons = [32, 64, 128, 256],
                          fc2_N_neurons = [32, 64, 128, 256],
                          fc2_z_neurons = [32, 64, 128, 256],
                          fc2_b_neurons = [32, 64, 128, 256],
@@ -226,10 +228,12 @@ def yield_data(data, Nlabels, zlabels, blabels, batch_sz, spec_len, maskval=0.0)
         yld_N = Nlabels[pertrb_s, pertrb_w+cenpix, 0]
         yld_z = zlabels[pertrb_s, pertrb_w+cenpix, 0]
         yld_b = blabels[pertrb_s, pertrb_w+cenpix, 0]
+        yld_a = np.ones(yld_b.shape, dtype=np.int)
         # Extract the relevant bits of information for the minor (i.e. weak line of the blend) absorber
         yld_Nb = Nlabels[pertrb_s, pertrb_w+cenpix, 1]
         yld_zb = zlabels[pertrb_s, pertrb_w+cenpix, 1]
         yld_bb = blabels[pertrb_s, pertrb_w+cenpix, 1]
+        yld_ab = np.ones(yld_bb.shape, dtype=np.int)
         # Mask
         if True:
             # wmsk = np.where(X_batch[:, cenpix, 0] > 0.95)
@@ -240,17 +244,21 @@ def yield_data(data, Nlabels, zlabels, blabels, batch_sz, spec_len, maskval=0.0)
             yld_N[wmsk] = maskval
             yld_z[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
             yld_b[wmsk] = maskval
+            yld_a[wmsk] = 0
             wmsk = np.where(np.abs(yld_zb) > zmskrng)
             yld_Nb[wmsk] = maskval
             yld_zb[wmsk] = maskval  # Note, this will mask true zeros in the yld_z array
             yld_bb[wmsk] = maskval
+            yld_ab[wmsk] = 0
         # Store output
         outdict = {'output_N': yld_N,
                    'output_z': yld_z,
                    'output_b': yld_b,
+                   'output_a': yld_a,
                    'output_Nb': yld_Nb,
                    'output_zb': yld_zb,
-                   'output_bb': yld_bb
+                   'output_bb': yld_bb,
+                   'output_ab': yld_ab
                    }
         if False:
             # Debugging
@@ -270,6 +278,7 @@ def build_model_simple(hyperpar):
     # Extract parameters
     spec_len = hyperpar['spec_len']
     fc1_neurons = hyperpar['fc1_neurons']
+    fc2_a_neurons = hyperpar['fc2_a_neurons']
     fc2_N_neurons = hyperpar['fc2_N_neurons']
     fc2_b_neurons = hyperpar['fc2_b_neurons']
     fc2_z_neurons = hyperpar['fc2_z_neurons']
@@ -306,12 +315,16 @@ def build_model_simple(hyperpar):
     fullcon1 = Dense(fc1_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(flatlay)
     drop1 = Dropout(hyperpar['dropout_prob'])(fullcon1)
     # Second fully connected layer
+    fullcon2_a = Dense(fc2_N_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
+    drop2_a = Dropout(hyperpar['dropout_prob'])(fullcon2_a)
     fullcon2_N = Dense(fc2_N_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
     drop2_N = Dropout(hyperpar['dropout_prob'])(fullcon2_N)
     fullcon2_z = Dense(fc2_z_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
     drop2_z = Dropout(hyperpar['dropout_prob'])(fullcon2_z)
     fullcon2_b = Dense(fc2_b_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
     drop2_b = Dropout(hyperpar['dropout_prob'])(fullcon2_b)
+    fullcon2_ab = Dense(fc2_N_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
+    drop2_ab = Dropout(hyperpar['dropout_prob'])(fullcon2_ab)
     fullcon2_Nb = Dense(fc2_N_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
     drop2_Nb = Dropout(hyperpar['dropout_prob'])(fullcon2_Nb)
     fullcon2_zb = Dense(fc2_z_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
@@ -319,69 +332,15 @@ def build_model_simple(hyperpar):
     fullcon2_bb = Dense(fc2_b_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
     drop2_bb = Dropout(hyperpar['dropout_prob'])(fullcon2_bb)
     # Output
+    output_a = Dense(1, activation='sigmoid', name='output_a')(drop2_a)
     output_N = Dense(1, activation='linear', name='output_N')(drop2_N)
     output_z = Dense(1, activation='linear', name='output_z')(drop2_z)
     output_b = Dense(1, activation='linear', name='output_b')(drop2_b)
+    output_ab = Dense(1, activation='sigmoid', name='output_ab')(drop2_ab)
     output_Nb = Dense(1, activation='linear', name='output_Nb')(drop2_Nb)
     output_zb = Dense(1, activation='linear', name='output_zb')(drop2_zb)
     output_bb = Dense(1, activation='linear', name='output_bb')(drop2_bb)
-    model = Model(inputs=[input_1], outputs=[output_N, output_z, output_b, output_Nb, output_zb, output_bb])
-    return model
-
-
-def build_model_deep(hyperpar):
-    # Extract parameters
-    spec_len = hyperpar['spec_len']
-    fc1_neurons = hyperpar['fc1_neurons']
-    fc2_N_neurons = hyperpar['fc2_N_neurons']
-    fc2_b_neurons = hyperpar['fc2_b_neurons']
-    fc2_z_neurons = hyperpar['fc2_z_neurons']
-    conv1_kernel = hyperpar['conv_kernel_1']
-    conv2_kernel = hyperpar['conv_kernel_2']
-    conv3_kernel = hyperpar['conv_kernel_3']
-    conv1_filter = hyperpar['conv_filter_1']
-    conv2_filter = hyperpar['conv_filter_2']
-    conv3_filter = hyperpar['conv_filter_3']
-    conv1_stride = hyperpar['conv_stride_1']
-    conv2_stride = hyperpar['conv_stride_2']
-    conv3_stride = hyperpar['conv_stride_3']
-    pool1_kernel = hyperpar['pool_kernel_1']
-    pool2_kernel = hyperpar['pool_kernel_2']
-    pool3_kernel = hyperpar['pool_kernel_3']
-    pool1_stride = hyperpar['pool_stride_1']
-    pool2_stride = hyperpar['pool_stride_2']
-    pool3_stride = hyperpar['pool_stride_3']
-
-    # Build model
-    # Shape is (batches, steps, channels)
-    # For example, a 3-color 1D image of side 100 pixels, dealt in batches of 32 would have a shape=(32,100,3)
-    input_1 = Input(shape=(spec_len, 1), name='input_1')
-    conv11 = Conv1D(filters=conv1_filter, kernel_size=(conv1_kernel,), strides=(conv1_stride,), activation='relu')(input_1)
-    conv12 = Conv1D(filters=conv1_filter, kernel_size=(conv1_kernel,), strides=(conv1_stride,), activation='relu')(conv11)
-    pool1 = MaxPooling1D(pool_size=(pool1_kernel,), strides=(pool1_stride,))(conv12)
-    conv21 = Conv1D(filters=conv2_filter, kernel_size=(conv2_kernel,), strides=(conv2_stride,), activation='relu')(pool1)
-    conv22 = Conv1D(filters=conv2_filter, kernel_size=(conv2_kernel,), strides=(conv2_stride,), activation='relu')(conv21)
-    pool2 = MaxPooling1D(pool_size=(pool2_kernel,), strides=(pool2_stride,))(conv22)
-    conv31 = Conv1D(filters=conv3_filter, kernel_size=(conv3_kernel,), strides=(conv3_stride,), activation='relu')(pool2)
-    conv32 = Conv1D(filters=conv3_filter, kernel_size=(conv3_kernel,), strides=(conv3_stride,), activation='relu')(conv31)
-    pool3 = MaxPooling1D(pool_size=(pool3_kernel,), strides=(pool3_stride,))(conv32)
-    flatlay = Flatten()(pool3)
-
-    # Interpretation model
-    regpen = hyperpar['l2_regpen']
-    fullcon1 = Dense(fc1_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(flatlay)
-    drop1 = Dropout(hyperpar['dropout_prob'])(fullcon1)
-    # Second fully connected layer
-    fullcon2_N = Dense(fc2_N_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
-    drop2_N = Dropout(hyperpar['dropout_prob'])(fullcon2_N)
-    fullcon2_z = Dense(fc2_z_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
-    drop2_z = Dropout(hyperpar['dropout_prob'])(fullcon2_z)
-    fullcon2_b = Dense(fc2_b_neurons, activation='relu', kernel_regularizer=regularizers.l2(regpen))(drop1)
-    drop2_b = Dropout(hyperpar['dropout_prob'])(fullcon2_b)
-    output_N = Dense(1, activation='linear', name='output_N')(drop2_N)
-    output_z = Dense(1, activation='linear', name='output_z')(drop2_z)
-    output_b = Dense(1, activation='linear', name='output_b')(drop2_b)
-    model = Model(inputs=[input_1], outputs=[output_N, output_z, output_b])
+    model = Model(inputs=[input_1], outputs=[output_a, output_N, output_z, output_b, output_ab, output_Nb, output_zb, output_bb])
     return model
 
 
@@ -414,26 +373,18 @@ def evaluate_model(trainX, trainN, trainz,  trainb,
         pngname = filepath + model_name + '.png'
         plot_model(model, to_file=pngname)
     # Compile
-    masking = True
-    if masking:
-        loss = {'output_N': mse_mask(),
-                'output_z': mse_mask(),
-                'output_b': mse_mask(),
-                'output_Nb': mse_mask(),
-                'output_zb': mse_mask(),
-                'output_bb': mse_mask()
-                }
-    else:
-        loss = {'output_N': 'mse',
-                'output_z': 'mse',
-                'output_b': 'mse',
-                'output_Nb': 'mse',
-                'output_zb': 'mse',
-                'output_bb': 'mse'
-                }
+    loss = {'output_a': 'binary_crossentropy',
+            'output_N': mse_mask(),
+            'output_z': mse_mask(),
+            'output_b': mse_mask(),
+            'output_ab': 'binary_crossentropy',
+            'output_Nb': mse_mask(),
+            'output_zb': mse_mask(),
+            'output_bb': mse_mask()
+            }
     decay = hyperpar['lr_decay']*hyperpar['learning_rate']/hyperpar['num_epochs']
     optadam = Adam(lr=hyperpar['learning_rate'], decay=decay)
-    gpumodel.compile(loss=loss, optimizer=optadam, metrics=['mean_squared_error'])
+    gpumodel.compile(loss=loss, optimizer=optadam, metrics=['accuracy'])
     # Initialise callbacks
     ckp_name = filepath + model_name + '.hdf5'
     sav_name = filepath + model_name + '_save.hdf5'

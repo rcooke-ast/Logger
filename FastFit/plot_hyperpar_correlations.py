@@ -12,7 +12,7 @@ def load_obj(dirname):
         return pickle.load(f)
 
 
-filedir = 'fit_data/multiscr_blend/'
+filedir = 'fit_data/multiscr_blend_bzfix/'
 files = glob.glob(filedir+'model_*.log')
 cntr = 0
 objs = []
