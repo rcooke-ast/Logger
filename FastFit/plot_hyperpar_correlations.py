@@ -12,7 +12,7 @@ def load_obj(dirname):
         return pickle.load(f)
 
 
-filedir = 'fit_data/multiscr_blend_bzfix/'
+filedir = 'fit_data/lyaforest_nonoise/'
 files = glob.glob(filedir+'model_*.log')
 cntr = 0
 objs = []
@@ -30,7 +30,7 @@ for file in files:
         for ii, key in enumerate(pk):
             xplot[ii].append(par[key])
             yplot[ii].append(np.log10(tab_m['output_z_loss'][-1]))
-            # loss  output_N_loss
+            # loss  output_N_loss  output_a_acc
             if cntr == 0:
                 name.append(key)
         cntr += 1
@@ -41,3 +41,6 @@ for pp in range(nax):
     plt.plot(xplot[pp], yplot[pp], 'bx')
     plt.title(name[pp])
 plt.show()
+
+# For lyaforest_nonoise:
+# higher out_a_acc for smaller speclen
